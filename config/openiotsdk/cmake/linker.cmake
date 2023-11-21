@@ -20,7 +20,7 @@
 #
 
 function(set_target_link target)
-    target_link_libraries(${target}
+    target_link_libraries(${target} PRIVATE
         mdh-arm-corstone-300-startup
     )
 

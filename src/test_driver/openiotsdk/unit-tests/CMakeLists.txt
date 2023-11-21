@@ -29,25 +29,36 @@ set(CONFIG_CHIP_PROGRESS_LOGGING NO)
 set(CONFIG_CHIP_AUTOMATION_LOGGING YES)
 set(CONFIG_CHIP_ERROR_LOGGING NO)
 
+set(PW_ROOT ${CHIP_ROOT}/third_party/pigweed/repo)
+set(pw_unit_test_AUTOMATIC_RUNNER "")
+set(pw_sys_io_BACKEND "pw_sys_io_stdio")
+set(pw_assert_BACKEND "pw_assert_log")
+set(pw_log_BACKEND  "pw_log_basic")
+
 # Toolchain files need to exist before first call to project
 include(toolchain)
 
 project(chip-open-iot-sdk-unit-tests LANGUAGES C CXX ASM)
+
+include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
+include($ENV{PW_ROOT}/pw_unit_test/test.cmake)
 
 include(sdk)
 include(chip)
 include(linker)
 
 add_subdirectory(${OPEN_IOT_SDK_EXAMPLE_COMMON}/app ./app_build)
+add_subdirectory(${PW_ROOT} pigweed_build)
 
 file(STRINGS test_components.txt TEST_NAMES_FROM_FILE)
+file(STRINGS test_components_nl.txt TEST_NAMES_FROM_FILE_NL)
 
 target_compile_definitions(openiotsdk-startup
     PRIVATE
         IOT_SDK_APP_MAIN_STACK_SIZE=20480
 )
 
-foreach(TEST_NAME IN LISTS TEST_NAMES_FROM_FILE)
+foreach(TEST_NAME IN LISTS TEST_NAMES_FROM_FILE_NL)
     set(APP_TARGET ${TEST_NAME}_ns)
     add_executable(${APP_TARGET})
     target_include_directories(${APP_TARGET}
@@ -58,10 +69,10 @@ foreach(TEST_NAME IN LISTS TEST_NAMES_FROM_FILE)
 
     target_sources(${APP_TARGET}
         PRIVATE
-            main/main_ns.cpp
+            main/main_ns_nl.cpp
     )
 
-    target_link_libraries(${APP_TARGET}
+    target_link_libraries(${APP_TARGET} PRIVATE
         openiotsdk-startup
         openiotsdk-app
     )
@@ -74,4 +85,40 @@ foreach(TEST_NAME IN LISTS TEST_NAMES_FROM_FILE)
 
     set_target_link(${APP_TARGET})
     sdk_post_build(${APP_TARGET})
+endforeach()
+
+foreach(TEST_NAME IN LISTS TEST_NAMES_FROM_FILE)
+    set(APP_TARGET ${TEST_NAME}_ns)
+    # add_executable(${APP_TARGET})
+    pw_add_test(${APP_TARGET}
+        SOURCES
+            main/main_ns.cpp
+        PRIVATE_DEPS
+            openiotsdk-startup
+            openiotsdk-app
+            # pw_unit_test
+        PRIVATE_LINK_OPTIONS
+            -Wl,--whole-archive "${CMAKE_CURRENT_BINARY_DIR}/chip_build/lib/lib${TEST_NAME}.a"
+            -Wl,--no-whole-archive
+    )
+    target_include_directories(${APP_TARGET}.bin
+        PRIVATE
+            main/include
+    )
+
+    # target_sources(${APP_TARGET}
+    #     PRIVATE
+    #         main/main_ns.cpp
+    # )
+
+    # target_link_libraries(${APP_TARGET}.bin
+    #     openiotsdk-startup
+    #     openiotsdk-app
+    #     pw_unit_test
+    # )
+
+    # Link the *whole-archives* to keep the static test objects.
+
+    set_target_link(${APP_TARGET}.bin)
+    sdk_post_build(${APP_TARGET}.bin)
 endforeach()
