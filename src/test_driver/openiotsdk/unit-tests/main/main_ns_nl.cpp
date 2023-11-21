@@ -20,8 +20,11 @@
 #include <stdlib.h>
 
 #include "openiotsdk_platform.h"
+#include <NlTestLogger.h>
+#include <lib/support/UnitTestRegistration.h>
 #include <platform/CHIPDeviceLayer.h>
-#include "gtest/gtest.h"
+
+constexpr nl_test_output_logger_t NlTestLogger::nl_test_logger;
 
 using namespace ::chip;
 
@@ -34,7 +37,7 @@ int main()
         return EXIT_FAILURE;
     }
 
-    testing::InitGoogleTest();
+    nlTestSetLogger(&NlTestLogger::nl_test_logger);
 
     ChipLogAutomation("Open IoT SDK unit-tests start");
 
@@ -45,7 +48,7 @@ int main()
     }
 
     ChipLogAutomation("Open IoT SDK unit-tests run...");
-    int status = RUN_ALL_TESTS();
+    int status = RunRegisteredUnitTests();
     ChipLogAutomation("Test status: %d", status);
     ChipLogAutomation("Open IoT SDK unit-tests completed");
 
