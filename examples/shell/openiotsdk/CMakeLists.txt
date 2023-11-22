@@ -63,9 +63,10 @@ target_sources(${APP_TARGET}
         ${SHELL_COMMON}/globals.cpp
 )
 
-target_link_libraries(${APP_TARGET}
-    openiotsdk-startup
-    openiotsdk-app
+target_link_libraries(${APP_TARGET} 
+    PRIVATE
+        openiotsdk-startup
+        openiotsdk-app
 )
 
 include(linker)

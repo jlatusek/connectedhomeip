@@ -73,8 +73,9 @@ foreach(TEST_NAME IN LISTS TEST_NAMES_FROM_FILE_NL)
     )
 
     target_link_libraries(${APP_TARGET} PRIVATE
-        openiotsdk-startup
-        openiotsdk-app
+        PRIVATE
+            openiotsdk-startup
+            openiotsdk-app
     )
 
     # Link the *whole-archives* to keep the static test objects.
