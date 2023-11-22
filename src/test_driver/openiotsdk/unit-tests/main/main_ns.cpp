@@ -20,11 +20,10 @@
 #include <stdlib.h>
 
 #include "openiotsdk_platform.h"
-#include <platform/CHIPDeviceLayer.h>
 #include "gtest/gtest.h"
+#include <platform/CHIPDeviceLayer.h>
 
 using namespace ::chip;
-
 
 int main()
 {
