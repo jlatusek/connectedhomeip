@@ -28,7 +28,6 @@ constexpr nl_test_output_logger_t NlTestLogger::nl_test_logger;
 
 using namespace ::chip;
 
-
 int main()
 {
     if (openiotsdk_platform_init())
