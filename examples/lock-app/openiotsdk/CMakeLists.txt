@@ -61,8 +61,9 @@ target_sources(${APP_TARGET}
 )
 
 target_link_libraries(${APP_TARGET}
-    openiotsdk-startup
-    openiotsdk-app
+    PRIVATE
+        openiotsdk-startup
+        openiotsdk-app
 )
 
 include(linker)
