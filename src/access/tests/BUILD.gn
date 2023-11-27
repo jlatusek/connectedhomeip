@@ -27,6 +27,7 @@ chip_test_suite("tests") {
     # TODO: Fix compilation warnings and remove this
     "-Wno-error=undef",
     "-Wno-error=sign-compare",
+    "-Wno-error=sign-conversion",
   ]
 
   public_deps = [
