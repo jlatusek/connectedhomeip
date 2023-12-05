@@ -33,7 +33,7 @@ int main()
         return EXIT_FAILURE;
     }
 
-    testing::InitGoogleTest();
+    testing::InitGoogleTest(nullptr, nullptr);
 
     ChipLogAutomation("Open IoT SDK unit-tests start");
 
