@@ -44,8 +44,10 @@ set(CHIP_CFLAGS
     -I${CMAKE_CURRENT_SOURCE_DIR}/main/include
 )
 
+set(PW_ROOT ${CHIP_ROOT}/third_party/pigweed/repo)
 # Load NCS/Zephyr build system
 list(APPEND ZEPHYR_EXTRA_MODULES ${CHIP_ROOT}/config/nrfconnect/chip-module)
+list(APPEND ZEPHYR_EXTRA_MODULES ${PW_ROOT})
 find_package(Zephyr HINTS $ENV{ZEPHYR_BASE})
 
 # ==================================================
@@ -56,7 +58,11 @@ project(AllChipTests)
 enable_testing()
 
 target_sources(app PRIVATE main/runner.cpp)
-target_link_libraries(app PUBLIC chip $<TARGET_FILE:kernel>)
+target_link_libraries(app PUBLIC chip $<TARGET_FILE:kernel>
+    pw_unit_test
+    pw_log_basic
+)
+
 target_compile_definitions(app PUBLIC CHIP_HAVE_CONFIG_H)
 
 add_test(AllChipTests zephyr/zephyr.exe)

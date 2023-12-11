@@ -509,3 +509,7 @@ config CHIP_OTA_IMAGE_EXTRA_ARGS
 endif
 
 endif
+
+rsource "../../third_party/pigweed/repo/Kconfig.zephyr"
+rsource "../../third_party/pigweed/repo/pw_sys_io_zephyr/Kconfig"
+rsource "../../third_party/pigweed/repo/pw_assert_zephyr/Kconfig"
