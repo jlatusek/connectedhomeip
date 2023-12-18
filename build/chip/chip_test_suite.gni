@@ -168,7 +168,7 @@ template("chip_test_suite") {
   }
 }
 
-# TODO: remove this once transition away from nlunit-test is completed
+# TODO [PW_MIGRATION]: remove this once transition away from nlunit-test is completed
 template("chip_test_suite_using_nltest") {
   _suite_name = target_name
 
