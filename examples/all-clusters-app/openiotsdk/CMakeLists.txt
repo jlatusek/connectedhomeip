@@ -68,7 +68,6 @@ target_sources(${APP_TARGET}
 )
 
 target_link_libraries(${APP_TARGET}
-    PRIVATE
     openiotsdk-startup
     openiotsdk-app
 )

@@ -30,12 +30,6 @@ set(CONFIG_CHIP_AUTOMATION_LOGGING YES)
 set(CONFIG_CHIP_ERROR_LOGGING NO)
 
 set(PW_ROOT ${CHIP_ROOT}/third_party/pigweed/repo)
-# set(pw_unit_test_AUTOMATIC_RUNNER "")
-# set(pw_unit_test_MAIN "")
-# set(pw_sys_io_BACKEND "pw_sys_io_stdio")
-# set(pw_assert_BACKEND "pw_assert_log")
-# set(pw_log_BACKEND  "pw_log_basic")
-
 
 # Toolchain files need to exist before first call to project
 include(toolchain)
@@ -114,11 +108,10 @@ foreach(TEST_NAME IN LISTS TEST_NAMES_FROM_FILE)
             main/main_ns.cpp
     )
 
-    target_link_libraries(${APP_TARGET} PRIVATE
-        PRIVATE
-            openiotsdk-startup
-            openiotsdk-app
-            pw_unit_test
+    target_link_libraries(${APP_TARGET}
+        openiotsdk-startup
+        openiotsdk-app
+        pw_unit_test
     )
 
     # Link the *whole-archives* to keep the static test objects.
