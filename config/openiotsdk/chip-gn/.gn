@@ -30,8 +30,6 @@ default_args = {
 
   pw_sys_io_BACKEND = dir_pw_sys_io_stdio
 
-  # pw_assert_BACKEND = "$dir_pw_assert_tokenized:check_backend"
-  # pw_assert_LITE_BACKEND = "$dir_pw_assert_tokenized:assert_backend"
   pw_assert_BACKEND = dir_pw_assert_log
   pw_log_BACKEND = dir_pw_log_basic
 
