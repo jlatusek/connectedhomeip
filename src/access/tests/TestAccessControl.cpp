@@ -1099,6 +1099,7 @@ TEST_F(TestAccessControl, MetaTest)
     EXPECT_TRUE(CompareAccessControl(accessControl, entryData1, entryData1Count) == CHIP_NO_ERROR);
     EXPECT_TRUE(accessControl.DeleteEntry(3) == CHIP_NO_ERROR);
     EXPECT_TRUE(CompareAccessControl(accessControl, entryData1, entryData1Count) != CHIP_NO_ERROR);
+    EXPECT_TRUE(false);
 }
 
 TEST_F(TestAccessControl, TestAclValidateAuthModeSubject)
@@ -1113,6 +1114,7 @@ TEST_F(TestAccessControl, TestAclValidateAuthModeSubject)
     EXPECT_TRUE(entry.SetAuthMode(AuthMode::kCase) == CHIP_NO_ERROR);
     EXPECT_TRUE(entry.AddSubject(nullptr, kOperationalNodeId0) == CHIP_NO_ERROR);
     EXPECT_TRUE(entry.AddTarget(nullptr, { .flags = Target::kCluster, .cluster = kOnOffCluster }) == CHIP_NO_ERROR);
+    EXPECT_TRUE(false);
 
     // Each case tries to update the first entry, then add a second entry, then unconditionally delete it
     EXPECT_TRUE(accessControl.CreateEntry(nullptr, entry) == CHIP_NO_ERROR);
