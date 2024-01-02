@@ -129,7 +129,6 @@ template("chip_test_suite") {
 
     if (defined(invoker.tests)) {
       foreach(_test, invoker.tests) {
-
         _test_output_dir = "${root_out_dir}/tests"
         if (defined(invoker.output_dir)) {
           _test_output_dir = invoker.output_dir

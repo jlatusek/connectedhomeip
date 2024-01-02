@@ -45,7 +45,6 @@ pw_python_wheels("nl_test_runner_wheel") {
   directory = "$root_out_dir/chip_nl_test_runner_wheels"
 }
 
-
 pw_python_package("pw_test_runner") {
   setup = [
     "pw_test_runner/pyproject.toml",
