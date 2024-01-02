@@ -43,6 +43,7 @@ int main(void)
     VerifyOrDie(settings_subsys_init() == 0);
 
     LOG_INF("Starting CHIP tests!");
+    InitUnitTests(nullptr, nullptr);
     int status = RunRegisteredUnitTests();
     LOG_INF("CHIP test status: %d", status);
 
