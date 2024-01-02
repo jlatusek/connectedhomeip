@@ -17,6 +17,7 @@
 
 #include <lib/support/UnitTestRegistration.h>
 #include <lib/support/logging/CHIPLogging.h>
+#include <pw_unit_test/framework.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -63,6 +64,13 @@ CHIP_ERROR RegisterUnitTests(UnitTestTriggerFunction tests)
     return CHIP_NO_ERROR;
 }
 
+void InitUnitTests(int * argc, char ** argv)
+{
+    // The following line has no effect with pw_unit_test_light, but makes this
+    // test compatible with upstream GoogleTest.
+    testing::InitGoogleTest(argc, argv);
+}
+
 int RunRegisteredUnitTests()
 {
     int status = 0;
@@ -70,6 +78,7 @@ int RunRegisteredUnitTests()
     {
         status += gs_test_suites.test_suites[i]();
     }
+    status += RUN_ALL_TESTS();
     return status;
 }
 
