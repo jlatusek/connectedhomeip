@@ -319,9 +319,7 @@ static_library("testing_nlunit") {
     "UnitTestRegistration.h",
   ]
 
-  deps = [
-    "${dir_pw_unit_test}",
-  ]
+  deps = [ "${dir_pw_unit_test}" ]
 
   public_deps = [
     ":support",
