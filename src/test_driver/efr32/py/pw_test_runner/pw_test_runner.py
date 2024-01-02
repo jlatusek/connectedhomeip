@@ -17,15 +17,14 @@
 
 import argparse
 import logging
+import os
 import subprocess
 import sys
 import time
-import os
 from pathlib import Path
 from typing import Any
 
 import serial  # type: ignore
-
 from pw_hdlc import rpc
 from pw_unit_test.rpc import run_tests
 
