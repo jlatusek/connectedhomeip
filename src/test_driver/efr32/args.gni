@@ -35,3 +35,9 @@ chip_system_config_use_open_thread_inet_endpoints = false
 chip_with_lwip = true
 
 pw_rpc_CONFIG = "$dir_pw_rpc:disable_global_mutex"
+
+pw_sys_io_BACKEND = "$dir_pw_sys_io_stdio"
+pw_assert_BACKEND = "$dir_pw_assert_log"
+pw_log_BACKEND = "$dir_pw_log_basic"
+
+pw_unit_test_BACKEND = "$dir_pw_unit_test:light"
