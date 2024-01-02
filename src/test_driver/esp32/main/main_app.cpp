@@ -41,6 +41,7 @@ const char TAG[] = "CHIP-tests";
 static void tester_task(void * pvParameters)
 {
     ESP_LOGI(TAG, "Starting CHIP tests!");
+    InitUnitTests(nullptr, nullptr);
     int status = RunRegisteredUnitTests();
     ESP_LOGI(TAG, "CHIP test status: %d", status);
     exit(status);
