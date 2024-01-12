@@ -25,7 +25,5 @@ chip_test_suite("tests") {
   public_deps = [
     "${chip_root}/src/access",
     "${chip_root}/src/lib/support:test_utils",
-    "${chip_root}/src/lib/support:testing_nlunit",
-    "${nlunit_test_root}:nlunit-test",
   ]
 }
