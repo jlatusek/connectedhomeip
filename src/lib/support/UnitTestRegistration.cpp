@@ -64,13 +64,6 @@ CHIP_ERROR RegisterUnitTests(UnitTestTriggerFunction tests)
     return CHIP_NO_ERROR;
 }
 
-void InitUnitTests(int * argc, char ** argv)
-{
-    // The following line has no effect with pw_unit_test_light, but makes this
-    // test compatible with upstream GoogleTest.
-    testing::InitGoogleTest(argc, argv);
-}
-
 int RunRegisteredUnitTests()
 {
     int status = 0;

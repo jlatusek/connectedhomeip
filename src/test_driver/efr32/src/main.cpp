@@ -53,8 +53,8 @@ public:
         stream_writer = &writer;
         nlTestSetLogger(&nl_test_logger);
 
-        InitUnitTests(nullptr, nullptr);
         RunRegisteredUnitTests();
+        RUN_ALL_TESTS();
 
         stream_writer = nullptr;
         writer.Finish();
