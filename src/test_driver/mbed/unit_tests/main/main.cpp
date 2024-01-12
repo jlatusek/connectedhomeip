@@ -64,6 +64,7 @@ int main()
     ChipLogProgress(NotSpecified, "Mbed unit-tests application run");
 
     int status = RunRegisteredUnitTests();
+    status += RUN_ALL_TESTS();
     ChipLogProgress(NotSpecified, "CHIP test status: %d", status);
 
     return status;
