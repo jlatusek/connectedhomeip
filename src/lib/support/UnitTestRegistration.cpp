@@ -17,7 +17,6 @@
 
 #include <lib/support/UnitTestRegistration.h>
 #include <lib/support/logging/CHIPLogging.h>
-#include <pw_unit_test/framework.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -71,7 +70,6 @@ int RunRegisteredUnitTests()
     {
         status += gs_test_suites.test_suites[i]();
     }
-    status += RUN_ALL_TESTS();
     return status;
 }
 
