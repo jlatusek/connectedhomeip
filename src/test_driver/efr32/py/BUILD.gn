@@ -61,7 +61,6 @@ pw_python_package("pw_test_runner") {
     "$dir_pw_hdlc/py",
     "$dir_pw_protobuf_compiler/py",
     "$dir_pw_rpc/py",
-    "${chip_root}/src/test_driver/efr32:pw_test_service.python",
   ]
 }
 

@@ -15,6 +15,9 @@
  *    limitations under the License.
  */
 
+// TODO To prevent config with nl headers has to be included before  nl test headers
+#include <pw_unit_test/unit_test_service.h>
+
 #include <AppConfig.h>
 #include <FreeRTOS.h>
 #include <PigweedLogger.h>
@@ -22,6 +25,7 @@
 #include <cstring>
 #include <lib/support/CHIPMem.h>
 #include <lib/support/CHIPPlatformMemory.h>
+#include <lib/support/UnitTest.h>
 #include <lib/support/UnitTestRegistration.h>
 #include <mbedtls/platform.h>
 #include <nl_test_service/nl_test.rpc.pb.h>
@@ -30,7 +34,6 @@
 #include <platform/CHIPDeviceLayer.h>
 #include <platform/KeyValueStoreManager.h>
 #include <platform/silabs/platformAbstraction/SilabsPlatform.h>
-#include <pw_unit_test/unit_test_service.h>
 #include <sl_system_kernel.h>
 #include <task.h>
 
@@ -54,7 +57,7 @@ public:
         nlTestSetLogger(&nl_test_logger);
 
         RunRegisteredUnitTests();
-        RUN_ALL_TESTS();
+        chip::pw_test::RunAllTests();
 
         stream_writer = nullptr;
         writer.Finish();
