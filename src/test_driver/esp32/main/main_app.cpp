@@ -30,6 +30,7 @@
 
 #include <crypto/CHIPCryptoPAL.h>
 #include <lib/core/ErrorStr.h>
+#include <lib/support/UnitTest.h>
 #include <lib/support/UnitTestRegistration.h>
 #include <platform/CHIPDeviceLayer.h>
 
@@ -43,7 +44,7 @@ static void tester_task(void * pvParameters)
     ESP_LOGI(TAG, "Starting CHIP tests!");
     int status = RunRegisteredUnitTests();
 
-    status += RUN_ALL_TESTS();
+    status += chip::pw_test::RunAllTests();
     ESP_LOGI(TAG, "CHIP test status: %d", status);
     exit(status);
 }
