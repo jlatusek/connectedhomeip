@@ -48,7 +48,6 @@ int main()
 
     ChipLogAutomation("Open IoT SDK unit-tests run...");
     int status = RunRegisteredUnitTests();
-    status += RUN_ALL_TESTS();
     ChipLogAutomation("Test status: %d", status);
     ChipLogAutomation("Open IoT SDK unit-tests completed");
 

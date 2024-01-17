@@ -143,6 +143,7 @@ if (chip_build_tests) {
     }
 
     if (chip_monolithic_tests) {
+      deps += [ "${chip_root}/src/lib/support:testing_pw" ]
       build_monolithic_library = true
       output_name = "libCHIP_tests"
       output_dir = "${root_out_dir}/lib"

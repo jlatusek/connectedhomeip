@@ -29,30 +29,17 @@ set(CONFIG_CHIP_PROGRESS_LOGGING NO)
 set(CONFIG_CHIP_AUTOMATION_LOGGING YES)
 set(CONFIG_CHIP_ERROR_LOGGING NO)
 
-set(PW_ROOT ${CHIP_ROOT}/third_party/pigweed/repo)
-
 # Toolchain files need to exist before first call to project
 include(toolchain)
 
 project(chip-open-iot-sdk-unit-tests LANGUAGES C CXX ASM)
 
-include(${PW_ROOT}/pw_build/pigweed.cmake)
-include(${PW_ROOT}/pw_unit_test/test.cmake)
-include(${PW_ROOT}/pw_assert/backend.cmake)
-include(${PW_ROOT}/pw_log/backend.cmake)
-include(${PW_ROOT}/pw_sys_io/backend.cmake)
-
-pw_set_backend(pw_log pw_log_basic)
-pw_set_backend(pw_assert.check pw_assert_log.check_backend)
-pw_set_backend(pw_assert.assert pw_assert.assert_compatibility_backend)
-pw_set_backend(pw_sys_io pw_sys_io_stdio)
 
 include(sdk)
 include(chip)
 include(linker)
 
 add_subdirectory(${OPEN_IOT_SDK_EXAMPLE_COMMON}/app ./app_build)
-add_subdirectory(${PW_ROOT} pigweed_build)
 
 file(STRINGS test_components.txt TEST_NAMES_FROM_FILE)
 # TODO [PW_MIGRATION] Remove the following variable once the migration to pw_unit_test is complete. 
@@ -98,8 +85,7 @@ foreach(TEST_NAME IN LISTS TEST_NAMES_FROM_FILE)
     add_executable(${APP_TARGET})
     target_include_directories(${APP_TARGET}
         PRIVATE
-            main/include
-            ${CHIP_ROOT}/third_party/nlunit-test/repo/src
+        main/include
     )
 
     target_sources(${APP_TARGET}
@@ -110,15 +96,16 @@ foreach(TEST_NAME IN LISTS TEST_NAMES_FROM_FILE)
     target_link_libraries(${APP_TARGET}
         openiotsdk-startup
         openiotsdk-app
-        pw_unit_test
     )
 
     # Link the *whole-archives* to keep the static test objects.
     target_link_options(${APP_TARGET}
         PUBLIC
             -Wl,--whole-archive "${CMAKE_CURRENT_BINARY_DIR}/chip_build/lib/lib${TEST_NAME}.a"
+            "${CMAKE_CURRENT_BINARY_DIR}/chip_build/lib/libTestPW.a"
             -Wl,--no-whole-archive)
 
+# ${MATTER_LIB_DIR}/libTestPW.a 
     set_target_link(${APP_TARGET})
     sdk_post_build(${APP_TARGET})
 endforeach()
