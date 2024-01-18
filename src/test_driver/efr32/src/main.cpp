@@ -57,7 +57,7 @@ public:
         nlTestSetLogger(&nl_test_logger);
 
         RunRegisteredUnitTests();
-        chip::pw_test::RunAllTests();
+        chip::test::RunAllTests();
 
         stream_writer = nullptr;
         writer.Finish();

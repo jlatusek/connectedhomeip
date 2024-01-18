@@ -44,7 +44,7 @@ static void tester_task(void * pvParameters)
     ESP_LOGI(TAG, "Starting CHIP tests!");
     int status = RunRegisteredUnitTests();
 
-    status += chip::pw_test::RunAllTests();
+    status += chip::test::RunAllTests();
     ESP_LOGI(TAG, "CHIP test status: %d", status);
     exit(status);
 }

@@ -1,9 +1,9 @@
 #pragma once
 
 namespace chip {
-namespace pw_test {
+namespace test {
 
 int RunAllTests();
 
-} // namespace pw_test
+} // namespace test
 } // namespace chip
