@@ -326,10 +326,6 @@ pw_static_library("testing_pw") {
   ]
 }
 
-pw_static_library("testing_pw.lib") {
-  public_deps = [ ":testing_pw" ]
-}
-
 static_library("testing_nlunit") {
   output_name = "libSupportTesting"
   output_dir = "${root_out_dir}/lib"
