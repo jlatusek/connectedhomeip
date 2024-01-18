@@ -20,14 +20,10 @@ cmake_minimum_required(VERSION 3.5)
 
 set(PROJECT_VER "v1.0")
 set(PROJECT_VER_NUMBER 1)
-get_filename_component(CHIP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../.. REALPATH)
-
-set(PW_ROOT ${CHIP_ROOT}/third_party/pigweed/repo)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/esp32_unit_tests.cmake)
-
 
 set(EXTRA_COMPONENT_DIRS
     "${CMAKE_CURRENT_LIST_DIR}/third_party/connectedhomeip/config/esp32/components"
@@ -38,7 +34,6 @@ project(test-driver)
 # C++17 is required for RPC build.
 idf_build_set_property(CXX_COMPILE_OPTIONS "-std=gnu++17;-Os;-DLWIP_IPV6_SCOPES=0;-DCHIP_HAVE_CONFIG_H" APPEND)
 idf_build_set_property(C_COMPILE_OPTIONS "-Os;-DLWIP_IPV6_SCOPES=0" APPEND)
-
 
 # TODO: libAppTests depends on MessagingTestHelpers, which depends on
 # NetworkTestHelpers.  That sort of depends on InetTestHelpers or
