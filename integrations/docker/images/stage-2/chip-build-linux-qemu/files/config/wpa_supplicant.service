@@ -1,0 +1,4 @@
+[Service]
+ExecStart=
+ExecStart=/sbin/wpa_supplicant -u -s -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant.conf
+

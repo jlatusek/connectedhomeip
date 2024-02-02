@@ -33,40 +33,38 @@ WORKDIR /tmp/workdir
 RUN curl https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${KERNEL_VERSION}.tar.xz -o linux-${KERNEL_VERSION}.tar.xz
 RUN tar -xJf linux-${KERNEL_VERSION}.tar.xz && rm linux-${KERNEL_VERSION}.tar.xz
 
-# Get default ubuntu kernel source
-RUN sed -i '/deb-src/s/^# //' /etc/apt/sources.list && apt update
-RUN mkdir -p /tmp/workdir/ubuntu-kernel
-WORKDIR /tmp/workdir/ubuntu-kernel
-RUN apt-get source linux-image-unsigned-$(uname -r)
-RUN cd /tmp/workdir/ubuntu-kernel/linux-* && \
-	python3 ./debian/scripts/misc/annotations --arch amd64 --flavour generic --export > /tmp/workdir/linux-${KERNEL_VERSION}/.config \
-	&& cp -vr ./debian /tmp/workdir/linux-${KERNEL_VERSION}
-
 # Set configuration for btvirt
 WORKDIR /tmp/workdir/linux-${KERNEL_VERSION}
-RUN ./scripts/config -e MAC80211
-RUN ./scripts/config -e MAC80211_HWSIM
-RUN ./scripts/config -e BT
-RUN ./scripts/config -e BT_BREDR
-RUN ./scripts/config -e BT_HCIVHCI
+RUN make x86_64_defconfig
+RUN ./scripts/config -e MAC80211 \
+	&& ./scripts/config -e MAC80211_HWSIM \
+	&& ./scripts/config -e BT \
+	&& ./scripts/config -e BT_BREDR \
+	&& ./scripts/config -e BT_HCIVHCI \
+	&& ./scripts/config -e CONFIG_CRYPTO_USER \
+	&& ./scripts/config -e CONFIG_CRYPTO_USER_API_SKCIPHER \
+	&& ./scripts/config -e CONFIG_CRYPTO_AES \
+	&& ./scripts/config -e CONFIG_CRYPTO_ECB \
+	&& ./scripts/config -e CONFIG_CRYPTO_CMAC \
+	&& ./scripts/config -e CONFIG_CRYPTO_USER_API_HASH
 # Compile
 RUN echo ""	&& export MAKEFLAGS=-j$(nproc) \
 	&& make olddefconfig  \
 	&& make
 
-# RUN curl https://cloud-images.ubuntu.com/minimal/releases/jammy/release/ubuntu-22.04-minimal-cloudimg-amd64-root.tar.xz \
-# 	-o /opt/ubuntu-qemu/ubuntu-22.04-minimal-cloudimg-amd64-root.tar.xz
-# RUN tar -xJf /opt/ubuntu-qemu/ubuntu-22.04-minimal-cloudimg-amd64-root.tar.xz -C /opt/ubuntu-qemu/rootfs
-
-RUN echo ""	&& mkdir -p /opt/ubuntu-qemu/rootfs
+# REguired for modules install
+RUN apt-get update \
+	&& DEBIAN_FRONTEND=noninteractive apt-get install -fy \
+	kmod
+RUN mkdir -p /opt/ubuntu-qemu/rootfs
 RUN make modules_install INSTALL_MOD_PATH=/opt/ubuntu-qemu/rootfs \
 	&& cp arch/x86/boot/bzImage /opt/ubuntu-qemu/bzImage
+
 # Download Ubuntu image for QEMU
 RUN echo ""	&& curl https://cloud-images.ubuntu.com/minimal/releases/jammy/release/ubuntu-22.04-minimal-cloudimg-amd64.img \
 	-o /opt/ubuntu-qemu/ubuntu-22.04-minimal-cloudimg-amd64.img
 RUN echo ""	&& curl https://cloud-images.ubuntu.com/minimal/releases/jammy/release/SHA256SUMS \
 	-o /opt/ubuntu-qemu/SHA256SUMS
-RUN echo ""	&& cd /opt/ubuntu-qemu
 WORKDIR /opt/ubuntu-qemu
 # RUN echo ""	&& sha256sum -c SHA256SUMS 2>&1 | grep OK
 # RUN echo ""	&& : # last line
@@ -92,7 +90,7 @@ RUN mkdir -p build
 
 RUN apt update
 RUN apt install -fy --no-install-recommends apt-utils
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -fy --fix-missing\
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -fy --fix-missing \
 	git \
 	bc \
 	libusb-dev \
@@ -133,7 +131,6 @@ RUN ./bootstrap && \
 	--disable-vcp \
 	--disable-micp \
 	--disable-csip \
-	--disable-udev \
 	--disable-cups \
 	--disable-mesh \
 	--disable-midi \
@@ -146,19 +143,28 @@ RUN ./bootstrap && \
 	--with-systemdsystemunitdir=/lib/systemd/system \
 	--with-systemduserunitdir=/usr/lib/systemd \
 	&& make -j8
-RUN truncate -s 10G /opt/ubuntu-qemu/ubuntu-22.04.img
-RUN virt-resize --expand /dev/sda1 /opt/ubuntu-qemu/ubuntu-22.04-minimal-cloudimg-amd64.img /opt/ubuntu-qemu/ubuntu-22.04.img
 WORKDIR /tmp/workdir/bluez/bluez-5.72/build
-RUN make modules_install INSTALL_MOD_PATH=/opt/ubuntu-qemu/rootfs
+RUN make install DESTDIR=/opt/ubuntu-qemu/rootfs && mkdir -p /opt/ubuntu-qemu/rootfs/usr/bin && cp /tmp/workdir/bluez/bluez-5.72/build/emulator/btvirt /opt/ubuntu-qemu/rootfs/usr/bin
 
+# RUN truncate -s 5G /opt/ubuntu-qemu/ubuntu-22.04.img
+RUN qemu-img create -f qcow2 -o preallocation=metadata /opt/ubuntu-qemu/ubuntu-22.04.img 10G
+RUN virt-resize --expand /dev/sda1 /opt/ubuntu-qemu/ubuntu-22.04-minimal-cloudimg-amd64.img /opt/ubuntu-qemu/ubuntu-22.04.img
+
+COPY files /opt/ubuntu-qemu/virt
+RUN mv /opt/ubuntu-qemu/virt/run-img.sh /opt/ubuntu-qemu && chmod +x /opt/ubuntu-qemu/run-img.sh
 RUN guestfish -a /opt/ubuntu-qemu/ubuntu-22.04.img \
 	--mount /dev/sda3:/ \
-	copy-in /opt/ubuntu-qemu/rootfs/* /
-RUN sleep infinity
-RUN guestfish -a /opt/ubuntu-qemu/ubuntu-22.04.img \
-	--mount /dev/sda3:/ \
-	sh 'apt-get purge -y snapd && systemctl disable systemd-networkd-wait-online.service' : \
-	sh 'echo root:root | chpasswd'
+	copy-in /opt/ubuntu-qemu/rootfs/lib /usr : \
+	copy-in /opt/ubuntu-qemu/rootfs/usr / : \
+	copy-in /opt/ubuntu-qemu/virt /opt : \
+	copy-in /opt/ubuntu-qemu/virt/config/01-netcfg.yaml /etc/netplan : \
+	sh 'apt-get purge -y snapd' : \
+	sh 'systemctl disable systemd-networkd-wait-online.service cloud-init.service lxd-agent.service ' : \
+	sh 'systemctl mask systemd-networkd-wait-online.service cloud-init.service lxd-agent.service ' : \
+	sh 'echo root:root | chpasswd' : \
+	sh 'ssh-keygen -A' : \
+	sh '/bin/echo -e "PermitRootLogin yes\nPasswordAuthentication yes" >> /etc/ssh/sshd_config' : \
+	sh 'rm /etc/ssh/sshd_config.d/60-cloudimg-settings.conf'
 
 # ip link set enp0s4 up
 # dhclient enp0s4
@@ -168,3 +174,5 @@ RUN guestfish -a /opt/ubuntu-qemu/ubuntu-22.04.img \
 
 # USER $USER_NAME
 # WORKDIR $USER_HOME
+
+WORKDIR /opt/ubuntu-qemu

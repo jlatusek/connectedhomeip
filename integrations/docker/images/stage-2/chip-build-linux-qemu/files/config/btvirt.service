@@ -1,0 +1,6 @@
+[Unit]
+Description=btvirt adapter
+After=syslog.target network.target
+
+[Service]
+ExecStart=/usr/bin/btvilt -l2 -L
