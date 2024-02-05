@@ -5,7 +5,7 @@ IMG="/opt/ubuntu-qemu/ubuntu-22.04.img"
 
 /usr/bin/qemu-system-x86_64 \
 	-machine ubuntu \
-	-smp 4 \
+	-smp 6 \
 	-m 1024 \
 	-nographic \
 	-device virtio-blk-pci,drive=virtio-blk1 \

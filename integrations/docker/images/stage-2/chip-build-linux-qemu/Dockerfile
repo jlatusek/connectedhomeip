@@ -35,6 +35,8 @@ RUN tar -xJf linux-${KERNEL_VERSION}.tar.xz && rm linux-${KERNEL_VERSION}.tar.xz
 
 # Set configuration for btvirt
 WORKDIR /tmp/workdir/linux-${KERNEL_VERSION}
+COPY files/0001-Bluetooth-MGMT-Synchronize-scan-start-and-LE-Meta-ev.patch .
+RUN patch -p1 < 0001-Bluetooth-MGMT-Synchronize-scan-start-and-LE-Meta-ev.patch
 RUN make x86_64_defconfig
 RUN ./scripts/config -e MAC80211 \
 	&& ./scripts/config -e MAC80211_HWSIM \
@@ -48,7 +50,7 @@ RUN ./scripts/config -e MAC80211 \
 	&& ./scripts/config -e CONFIG_CRYPTO_CMAC \
 	&& ./scripts/config -e CONFIG_CRYPTO_USER_API_HASH
 # Compile
-RUN echo ""	&& export MAKEFLAGS=-j$(nproc) \
+RUN export MAKEFLAGS=-j$(nproc) \
 	&& make olddefconfig  \
 	&& make
 
@@ -61,9 +63,9 @@ RUN make modules_install INSTALL_MOD_PATH=/opt/ubuntu-qemu/rootfs \
 	&& cp arch/x86/boot/bzImage /opt/ubuntu-qemu/bzImage
 
 # Download Ubuntu image for QEMU
-RUN echo ""	&& curl https://cloud-images.ubuntu.com/minimal/releases/jammy/release/ubuntu-22.04-minimal-cloudimg-amd64.img \
+RUN curl https://cloud-images.ubuntu.com/minimal/releases/jammy/release/ubuntu-22.04-minimal-cloudimg-amd64.img \
 	-o /opt/ubuntu-qemu/ubuntu-22.04-minimal-cloudimg-amd64.img
-RUN echo ""	&& curl https://cloud-images.ubuntu.com/minimal/releases/jammy/release/SHA256SUMS \
+RUN curl https://cloud-images.ubuntu.com/minimal/releases/jammy/release/SHA256SUMS \
 	-o /opt/ubuntu-qemu/SHA256SUMS
 WORKDIR /opt/ubuntu-qemu
 # RUN echo ""	&& sha256sum -c SHA256SUMS 2>&1 | grep OK
