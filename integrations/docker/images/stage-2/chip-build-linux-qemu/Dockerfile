@@ -2,7 +2,7 @@ ARG VERSION=latest
 FROM ubuntu:22.04
 LABEL org.opencontainers.image.source https://github.com/project-chip/connectedhomeip
 
-ARG KERNEL_VERSION=6.6.9
+ARG KERNEL_VERSION=6.7.3
 
 # USER root
 
@@ -161,6 +161,7 @@ RUN guestfish -a /opt/ubuntu-qemu/ubuntu-22.04.img \
 	sh 'apt-get purge -y snapd' : \
 	sh 'systemctl disable systemd-networkd-wait-online.service cloud-init.service lxd-agent.service ' : \
 	sh 'systemctl mask systemd-networkd-wait-online.service cloud-init.service lxd-agent.service ' : \
+	sh 'systemctl enable bluetooth' : \
 	sh 'echo root:root | chpasswd' : \
 	sh 'ssh-keygen -A' : \
 	sh '/bin/echo -e "PermitRootLogin yes\nPasswordAuthentication yes" >> /etc/ssh/sshd_config' : \
