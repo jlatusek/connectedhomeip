@@ -27,8 +27,7 @@ mkdir -p /etc/systemd/system/hostapd.service.d
 mkdir -p /etc/wpa_supplicant
 cp config/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant.conf
 
-mkdir -p /etc/systemd/system/wpa_supplicant.service.d
-cp config/wpa_supplicant.service /etc/systemd/system/wpa_supplicant.service.d/override.conf
+sed -ie 's+ExecStart.*+ExecStart=/sbin/wpa_supplicant -u -s -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant.conf+' /etc/systemd/system/dbus-fi.w1.wpa_supplicant1.service
 
 cp config/hostapd.service /etc/systemd/system/hostapd.service.d/override.conf
 cp config/dnsmasq.service /etc/systemd/system/dnsmasq.service.d/override.conf
@@ -41,7 +40,8 @@ DEBIAN_FRONTEND=noninteractive apt install -y \
   hostapd \
   wpasupplicant \
   iw \
-  libdw1
+  libdw1 \
+  rfkill
 
 apt remove -y \
   snapd \
