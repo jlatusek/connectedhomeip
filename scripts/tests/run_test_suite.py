@@ -133,6 +133,7 @@ class RunContext:
 def main(context, dry_run, log_level, target, target_glob, target_skip_glob,
          no_log_timestamps, root, internal_inside_unshare, include_tags, exclude_tags, runner, chip_tool):
     # Ensures somewhat pretty logging of what is going on
+    print("XXX", target)
     log_fmt = '%(asctime)s.%(msecs)03d %(levelname)-7s %(message)s'
     if no_log_timestamps:
         log_fmt = '%(levelname)-7s %(message)s'
@@ -283,9 +284,15 @@ def cmd_list(context):
     default=0,
     show_default=True,
     help='Number of tests that are expected to fail in each iteration.  Overall test will pass if the number of failures matches this.  Nonzero values require --keep-going')
+@click.option(
+    '--ble-wifi',
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help='Use a virtual wifi and bluetooth to commission device')
 @click.pass_context
 def cmd_run(context, iterations, all_clusters_app, lock_app, ota_provider_app, ota_requestor_app,
-            tv_app, bridge_app, lit_icd_app, chip_repl_yaml_tester, chip_tool_with_python, pics_file, keep_going, test_timeout_seconds, expected_failures):
+            tv_app, bridge_app, lit_icd_app, chip_repl_yaml_tester, chip_tool_with_python, pics_file, keep_going, test_timeout_seconds, expected_failures, ble_wifi):
     if expected_failures != 0 and not keep_going:
         logging.exception(f"'--expected-failures {expected_failures}' used without '--keep-going'")
         sys.exit(2)
@@ -340,7 +347,7 @@ def cmd_run(context, iterations, all_clusters_app, lock_app, ota_provider_app, o
 
     if sys.platform == 'linux':
         chiptest.linux.PrepareNamespacesForTestExecution(
-            context.obj.in_unshare)
+            context.obj.in_unshare, ble_wifi)
         paths = chiptest.linux.PathsWithNetworkNamespaces(paths)
 
     logging.info("Each test will be executed %d times" % iterations)
@@ -351,7 +358,7 @@ def cmd_run(context, iterations, all_clusters_app, lock_app, ota_provider_app, o
     def cleanup():
         apps_register.uninit()
         if sys.platform == 'linux':
-            chiptest.linux.ShutdownNamespaceForTestExecution()
+            chiptest.linux.ShutdownNamespaceForTestExecution(ble_wifi)
 
     for i in range(iterations):
         logging.info("Starting iteration %d" % (i+1))
@@ -375,7 +382,7 @@ def cmd_run(context, iterations, all_clusters_app, lock_app, ota_provider_app, o
                     logging.info('%-20s - Starting test' % (test.name))
                 test.Run(
                     runner, apps_register, paths, pics_file, test_timeout_seconds, context.obj.dry_run,
-                    test_runtime=context.obj.runtime)
+                    test_runtime=context.obj.runtime, ble_wifi=ble_wifi)
                 if not context.obj.dry_run:
                     test_end = time.monotonic()
                     logging.info('%-30s - Completed in %0.2f seconds' %

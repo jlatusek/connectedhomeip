@@ -54,6 +54,8 @@ def chiptool_runner_options(f):
                      help='Path to the PICS file to use.')(f)
     f = click.option('--additional_pseudo_clusters_directory', type=click.Path(), show_default=True, default=_DEFAULT_EXTENSIONS_DIR,
                      help='Path to a directory containing additional pseudo clusters.')(f)
+    # f = click.option('--ble-adapter', type=int, default=0,
+    #                  help='Number of used hci adapter')(f)
     return f
 
 

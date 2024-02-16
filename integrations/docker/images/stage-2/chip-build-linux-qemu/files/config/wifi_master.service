@@ -1,6 +1,6 @@
 [Unit]
-Description=Named network namespace wifi_master
-JoinsNamespaceOf=systemd-netns@wifi_master.service
+Description=Named network namespace tool
+JoinsNamespaceOf=systemd-netns@tool.service
 After=syslog.target network.target
 Before=hostapd.service
 Before=dnsmasq.service
@@ -9,16 +9,16 @@ Before=dnsmasq.service
 Type=oneshot
 RemainAfterExit=true
 
-ExecStartPre=-/usr/bin/env ip netns delete wifi_master
+ExecStartPre=-/usr/bin/env ip netns delete tool
 
-ExecStart=-/usr/bin/env ip netns add wifi_master
-ExecStart=-/usr/bin/env iw phy phy1 set netns name wifi_master
+ExecStart=-/usr/bin/env ip netns add tool
+ExecStart=-/usr/bin/env iw phy phy1 set netns name tool
 
-ExecStart=-/usr/bin/env ip netns exec wifi_master ip link set wlan1 up
-ExecStart=-/usr/bin/env ip netns exec wifi_master ip addr add 192.168.200.1/24 dev wlan1
+ExecStart=-/usr/bin/env ip netns exec tool ip link set wlan1 up
+ExecStart=-/usr/bin/env ip netns exec tool ip addr add 192.168.200.1/24 dev wlan1
 
-ExecStop=-/usr/bin/env ip netns exec wifi_master iw phy phy1 set netns 1
-ExecStop=-/usr/bin/env ip netns del wifi_master
+ExecStop=-/usr/bin/env ip netns exec tool iw phy phy1 set netns 1
+ExecStop=-/usr/bin/env ip netns del tool
 
 [Install]
 WantedBy=multi-user.target

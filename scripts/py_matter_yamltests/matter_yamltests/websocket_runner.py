@@ -96,7 +96,8 @@ class WebSocketRunner(TestRunner):
     async def _start_server(self, command):
         instance = None
         if command:
-            instance = subprocess.Popen(command, stdout=subprocess.DEVNULL)
+            print(f"XXXX: {command}")
+            instance = subprocess.Popen(command + ['--ble-adapter', '1'], stdout=subprocess.DEVNULL)
         return instance
 
     async def _stop_server(self, instance):

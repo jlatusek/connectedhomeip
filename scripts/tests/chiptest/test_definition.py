@@ -122,7 +122,9 @@ class App:
                 app_cmd = app_cmd + [key, value]
                 if key == '--KVS':
                     self.kvsPathSet.add(value)
-        return runner.RunSubprocess(app_cmd, name='APP ', wait=False)
+        print("XXX ", app_cmd)
+        res = runner.RunSubprocess(app_cmd, name='APP ', wait=False)
+        return res
 
     def __waitFor(self, waitForString, server_process, outpipe):
         logging.debug('Waiting for %s' % waitForString)
@@ -280,7 +282,7 @@ class TestDefinition:
         return ", ".join([t.to_s() for t in self.tags])
 
     def Run(self, runner, apps_register, paths: ApplicationPaths, pics_file: str,
-            timeout_seconds: typing.Optional[int], dry_run=False, test_runtime: TestRunTime = TestRunTime.CHIP_TOOL_PYTHON):
+            timeout_seconds: typing.Optional[int], dry_run=False, test_runtime: TestRunTime = TestRunTime.CHIP_TOOL_PYTHON, ble_wifi=True):
         """
         Executes the given test case using the provided runner for execution.
         """
@@ -324,7 +326,7 @@ class TestDefinition:
                     else:
                         key = os.path.basename(path[-1])
 
-                    app = App(runner, path)
+                    app = App(runner, path + ["--ble-device", "0", "--wifi"])
                     # Add the App to the register immediately, so if it fails during
                     # start() we will be able to clean things up properly.
                     apps_register.add(key, app)
@@ -357,7 +359,13 @@ class TestDefinition:
                     runner.RunSubprocess(python_cmd, name='CHIP_REPL_YAML_TESTER',
                                          dependencies=[apps_register], timeout_seconds=timeout_seconds)
             else:
-                pairing_cmd = paths.chip_tool_with_python_cmd + ['pairing', 'code', TEST_NODE_ID, setupCode]
+                if ble_wifi:
+                    time.sleep(3)
+                    pairing_cmd = paths.chip_tool_with_python_cmd + [
+                        "pairing", "ble-wifi",  TEST_NODE_ID, "Virtual_Wifi", "ExamplePassword", "20202021",  "3840"]
+                    # , "--ble-adapter", "1"]
+                else:
+                    pairing_cmd = paths.chip_tool_with_python_cmd + ['pairing', 'code', TEST_NODE_ID, setupCode]
                 test_cmd = paths.chip_tool_with_python_cmd + ['tests', self.run_name] + ['--PICS', pics_file]
                 server_args = ['--server_path', paths.chip_tool[-1]] + \
                     ['--server_arguments', 'interactive server' +
@@ -381,9 +389,9 @@ class TestDefinition:
 
         except Exception:
             logging.error("!!!!!!!!!!!!!!!!!!!! ERROR !!!!!!!!!!!!!!!!!!!!!!")
-            runner.capture_delegate.LogContents()
             raise
         finally:
+            runner.capture_delegate.LogContents()
             apps_register.killAll()
             apps_register.factoryResetAll()
             apps_register.removeAll()

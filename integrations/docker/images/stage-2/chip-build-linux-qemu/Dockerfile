@@ -169,6 +169,31 @@ RUN guestfish -a /opt/ubuntu-qemu/ubuntu-22.04.img \
 	sh '/bin/echo -e "PermitRootLogin yes\nPasswordAuthentication yes" >> /etc/ssh/sshd_config' : \
 	sh 'rm /etc/ssh/sshd_config.d/60-cloudimg-settings.conf'
 
+
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -fy --fix-missing \
+	python3-pip \
+	python3-venv \
+	python3.10-venv \
+	python-is-python3
+
+RUN pip3 install click diskcache coloredlogs ipython
+
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -fy --fix-missing \
+	dnsmasq \
+	hostapd \
+	wpasupplicant \
+	iw \
+	libdw1 \
+	rfkill
+
+RUN guestfish -a /opt/ubuntu-qemu/ubuntu-22.04.img \
+	--mount /dev/sda3:/ \
+	copy-in /opt/ubuntu-qemu/rootfs/lib /usr : \
+	copy-in /opt/ubuntu-qemu/rootfs/usr / : \
+	copy-in /opt/ubuntu-qemu/virt /opt : \
+	copy-in /opt/ubuntu-qemu/virt/config/01-netcfg.yaml /etc/netplan : \
+	sh 'systemctl disable hostapd wpa_supplicant hostapd dnsmasq'
+
 # ip link set enp0s4 up
 # dhclient enp0s4
 

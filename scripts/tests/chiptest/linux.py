@@ -18,6 +18,7 @@
 Handles linux-specific functionality for running test cases
 """
 
+from time import sleep
 import logging
 import os
 import subprocess
@@ -25,6 +26,7 @@ import sys
 import time
 
 from .test_definition import ApplicationPaths
+import psutil
 
 test_environ = os.environ.copy()
 
@@ -57,7 +59,7 @@ def EnsurePrivateState():
         sys.exit(1)
 
 
-def CreateNamespacesForAppTest():
+def CreateNamespacesForAppTest(ble_wifi: bool):
     """
     Creates appropriate namespaces for a tool and app binaries in a simulated
     isolated network.
@@ -127,7 +129,7 @@ def CreateNamespacesForAppTest():
         logging.warn("Some addresses look to still be tentative")
 
 
-def RemoveNamespaceForAppTest():
+def RemoveNamespaceForAppTest(ble_wifi: bool = False):
     """
     Removes namespaces for a tool and app binaries previously created to simulate an
     isolated network. This tears down what was created in CreateNamespacesForAppTest.
@@ -156,17 +158,162 @@ def RemoveNamespaceForAppTest():
             sys.exit(1)
 
 
-def PrepareNamespacesForTestExecution(in_unshare: bool):
+wifi = None
+ble = None
+
+
+def PrepareNamespacesForTestExecution(in_unshare: bool, ble_wifi: bool):
+    global wifi
+    global ble
+
     if not in_unshare:
         EnsureNetworkNamespaceAvailability()
     elif in_unshare:
         EnsurePrivateState()
 
-    CreateNamespacesForAppTest()
+    CreateNamespacesForAppTest(ble_wifi)
+    if (ble_wifi):
+        wifi = VirtualWifi(
+            hostapd_path='/usr/sbin/hostapd',
+            dnsmasq_path='/usr/sbin/dnsmasq',
+            wpa_supplicant_path='/usr/sbin/wpa_supplicant'
+        )
+        wifi.start()
+        ble = VirtualBle(btvirt_path='/usr/bin/btvirt')
+        ble.start()
 
 
-def ShutdownNamespaceForTestExecution():
-    RemoveNamespaceForAppTest()
+def ShutdownNamespaceForTestExecution(ble_wifi: bool):
+    global wifi
+    global ble
+
+    wifi.stop()
+    ble.stop()
+    RemoveNamespaceForAppTest(ble_wifi)
+
+
+class VirtualWifi:
+    def __init__(self, hostapd_path: str, dnsmasq_path: str, wpa_supplicant_path: str):
+        self._hostapd_path = hostapd_path
+        self._dnsmasq_path = dnsmasq_path
+        self._wpa_supplicant_path = wpa_supplicant_path
+        _chip_project_dir = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+        self._hostapd_conf = os.path.join(
+            _chip_project_dir, "integrations/docker/images/stage-2/chip-build-linux-qemu/files/config/hostapd.conf")
+        self._dnsmasq_conf = os.path.join(
+            _chip_project_dir, "integrations/docker/images/stage-2/chip-build-linux-qemu/files/config/dnsmasq.conf")
+        self._wpa_supplicant_conf = os.path.join(
+            _chip_project_dir, "integrations/docker/images/stage-2/chip-build-linux-qemu/files/config/wpa_supplicant.conf")
+        self._hostapd = None
+        self._dnsmasq = None
+        self._wpa_supplicant = None
+        self.wlan0_phy = None
+        self.wlan1_phy = None
+
+    def _is_process_running(self, name: str) -> bool:
+        for proc in psutil.process_iter(['name']):
+            if proc.info['name'] == name:
+                return True
+        return False
+
+    def _get_phy(self, dev: str) -> str:
+        output = subprocess.check_output(['iw', 'dev', dev, 'info'])
+        for line in output.split(b'\n'):
+            if b'wiphy' in line:
+                wiphy = int(line.split(b' ')[1])
+                return f"phy{wiphy}"
+        raise ValueError(f'No wiphy found for {dev}')
+
+    def _move_to_netns(self, phy: str, netns: str | int):
+        if type(netns) == int:
+            subprocess.check_call(["iw", "phy", phy, "set", "netns", str(netns)])
+        else:
+            subprocess.check_call(["iw", "phy", phy, "set", "netns", "name", netns])
+
+    def _set_ip_to_interface(self, netns: str, dev: str, ip: str):
+        subprocess.check_call(["ip", "netns", "exec", netns, "ip", "addr", "add", ip, "dev", dev])
+        subprocess.check_call(["ip", "netns", "exec", netns, "ip", "link", "set", "dev", dev, "up"])
+
+    def start(self):
+        self.wlan0_phy = self._get_phy('wlan0')
+        self.wlan1_phy = self._get_phy('wlan1')
+        self._move_to_netns(self.wlan0_phy, 'app')
+        self._move_to_netns(self.wlan1_phy, 'tool')
+        self._set_ip_to_interface('tool', 'wlan1', '192.168.200.1/24')
+
+        if not self._is_process_running('hostapd'):
+            self._hostapd = subprocess.Popen(["ip", "netns", "exec", "tool", self._hostapd_path, self._hostapd_conf])
+        if not self._is_process_running('dnsmasq'):
+            self._dnsmasq = subprocess.Popen(["ip", "netns", "exec", "tool", self._dnsmasq_path, '-d', '-C', self._dnsmasq_conf])
+        if not self._is_process_running('wpa_supplicant'):
+            print("wpa")
+            self._wpa_supplicant = subprocess.Popen(
+                ["ip", "netns", "exec", "app", self._wpa_supplicant_path, "-u", '-s', '-c', self._wpa_supplicant_conf])
+
+    def _disable_netns(self):
+        COMMANDS = [
+            f"ip netns exec app iw phy {self.wlan0_phy} set netns 1",
+            f"ip netns exec tool iw phy {self.wlan1_phy} set netns 1",
+            "ip netns del app",
+            "ip netns del tool",
+        ]
+
+        for command in COMMANDS:
+            logging.debug("Executing '%s'" % command)
+            if os.system(command) != 0:
+                breakpoint()
+                logging.error("Failed to execute '%s'" % command)
+                sys.exit(1)
+
+    def stop(self):
+        if self._hostapd:
+            self._hostapd.terminate()
+            self._hostapd.wait()
+        if self._dnsmasq:
+            self._dnsmasq.terminate()
+            self._dnsmasq.wait()
+        if self._wpa_supplicant:
+            self._wpa_supplicant.terminate()
+            self._wpa_supplicant.wait()
+
+
+class VirtualBle:
+    def __init__(self, btvirt_path: str):
+        self._btvirt_path = btvirt_path
+        self._btvirt = None
+        self.bluetoothctl = None
+
+    def bletoothctl_cmd(self, cmd):
+        self.bluetoothctl.stdin.write(cmd)
+        self.bluetoothctl.stdin.flush()
+        sleep(0.1)
+
+    def _run_bluetoothctl(self):
+        self.bluetoothctl = subprocess.Popen(["/usr/bin/bluetoothctl"], text=True,
+                                             stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        sleep(3)
+        self.bletoothctl_cmd("select 00:AA:01:00:00:00\n")
+        self.bletoothctl_cmd("power on\n")
+        self.bletoothctl_cmd("select 00:AA:01:01:00:01\n")
+        self.bletoothctl_cmd("power on\n")
+        self.bletoothctl_cmd("quit\n")
+        (stdout_data, stderr_data) = self.bluetoothctl.communicate()
+        print(stdout_data)
+        print(stderr_data)
+        sleep(0.5)
+        self.bluetoothctl.terminate()
+        self.bluetoothctl.wait()
+
+    def start(self):
+        self._btvirt = subprocess.Popen([self._btvirt_path, '-l2'])
+        sleep(5)
+        self._run_bluetoothctl()
+        sleep(3)
+
+    def stop(self):
+        if self._btvirt:
+            self._btvirt.terminate()
+            self._btvirt.wait()
 
 
 def PathsWithNetworkNamespaces(paths: ApplicationPaths) -> ApplicationPaths:

@@ -3,4 +3,4 @@ After=wifi_master.service
 Requires=wifi_master.service
 
 [Service]
-NetworkNamespacePath=/var/run/netns/wifi_master
+NetworkNamespacePath=/var/run/netns/tool
