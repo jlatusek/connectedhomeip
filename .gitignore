@@ -10,6 +10,7 @@
 
 # Build System
 out/
+/examples/virtual-device-app/android/App/buildSrc/build/
 /src/test_driver/nrfconnect/build/
 /src/darwin/Framework/build/
 
@@ -84,3 +85,5 @@ examples/*/esp32/dependencies.lock
 # jupyter temporary files
 .ipynb_checkpoints
 
+/runner.sh
+/runner_status

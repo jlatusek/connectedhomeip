@@ -121,7 +121,7 @@ public class ChipClusters {
         boolean isFabricFiltered) {
       ReportCallbackJni jniCallback = new ReportCallbackJni(null, callback, null);
       ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, attributeId);
-      ChipDeviceController.read(0, jniCallback.getCallbackHandle(), devicePtr, Arrays.asList(path), null, null, isFabricFiltered, timeoutMillis.orElse(0L).intValue(), null);
+      ChipInteractionClient.read(0, jniCallback.getCallbackHandle(), devicePtr, Arrays.asList(path), null, null, isFabricFiltered, timeoutMillis.orElse(0L).intValue(), null);
     }
 
     protected void writeAttribute(
@@ -132,7 +132,7 @@ public class ChipClusters {
       WriteAttributesCallbackJni jniCallback = new WriteAttributesCallbackJni(callback);
       byte[] tlv = encodeToTlv(value);
       AttributeWriteRequest writeRequest = AttributeWriteRequest.newInstance(endpointId, clusterId, attributeId, tlv);
-      ChipDeviceController.write(0, jniCallback.getCallbackHandle(), devicePtr, Arrays.asList(writeRequest), timedRequestTimeoutMs, timeoutMillis.orElse(0L).intValue());
+      ChipInteractionClient.write(0, jniCallback.getCallbackHandle(), devicePtr, Arrays.asList(writeRequest), timedRequestTimeoutMs, timeoutMillis.orElse(0L).intValue());
     }
 
     protected void subscribeAttribute(
@@ -140,9 +140,11 @@ public class ChipClusters {
         long attributeId,
         int minInterval,
         int maxInterval) {
-      ReportCallbackJni jniCallback = new ReportCallbackJni(callback, callback, null);
+      ReportCallbackJni jniCallback = new ReportCallbackJni(callback, callback, callback);
       ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, attributeId);
-      ChipDeviceController.subscribe(0, jniCallback.getCallbackHandle(), devicePtr, Arrays.asList(path), null, null, minInterval, maxInterval, false, true, timeoutMillis.orElse(0L).intValue(), null);
+      int fabricIndex = ChipInteractionClient.getFabricIndex(devicePtr);
+      long deviceId = ChipInteractionClient.getRemoteDeviceId(devicePtr);
+      ChipInteractionClient.subscribe(0, jniCallback.getCallbackHandle(), devicePtr, Arrays.asList(path), null, null, minInterval, maxInterval, false, true, timeoutMillis.orElse(0L).intValue(), null, ChipICDClient.isPeerICDClient(fabricIndex, deviceId));
     }
 
     protected void invoke(
@@ -153,7 +155,7 @@ public class ChipClusters {
       InvokeCallbackJni jniCallback = new InvokeCallbackJni(callback);
       byte[] tlv = encodeToTlv(value);
       InvokeElement element = InvokeElement.newInstance(endpointId, clusterId, commandId, tlv, null);
-      ChipDeviceController.invoke(0, jniCallback.getCallbackHandle(), devicePtr, element, timedRequestTimeoutMs, timeoutMillis.orElse(0L).intValue());
+      ChipInteractionClient.invoke(0, jniCallback.getCallbackHandle(), devicePtr, element, timedRequestTimeoutMs, timeoutMillis.orElse(0L).intValue());
     }
 
     private static native byte[] encodeToTlv(BaseTLVType value);
@@ -173,7 +175,7 @@ public class ChipClusters {
     }
   }
 
-  abstract static class ReportCallbackImpl implements ReportCallback, SubscriptionEstablishedCallback {
+  abstract static class ReportCallbackImpl implements ReportCallback, SubscriptionEstablishedCallback, ResubscriptionAttemptCallback {
     private BaseAttributeCallback callback;
     private ChipAttributePath path;
 
@@ -230,6 +232,9 @@ public class ChipClusters {
     public void onSubscriptionEstablished(long subscriptionId) {
       callback.onSubscriptionEstablished(subscriptionId);
     }
+
+    @Override
+    public void onResubscriptionAttempt(long terminationCause, long nextResubscribeIntervalMsec) {}
 
     public abstract void onSuccess(byte[] tlv);
   }
@@ -401,6 +406,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, IDENTIFY_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -426,6 +432,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, IDENTIFY_TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -451,6 +458,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -476,6 +484,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -501,6 +510,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -526,6 +536,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -551,6 +562,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -576,6 +588,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -854,6 +867,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NAME_SUPPORT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -879,6 +893,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -904,6 +919,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -929,6 +945,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -954,6 +971,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -979,6 +997,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1004,6 +1023,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1191,6 +1211,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ON_OFF_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1216,6 +1237,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GLOBAL_SCENE_CONTROL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1250,6 +1272,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ON_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1284,6 +1307,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OFF_WAIT_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1318,6 +1342,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, START_UP_ON_OFF_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1343,6 +1368,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1368,6 +1394,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1393,6 +1420,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1418,6 +1446,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1443,6 +1472,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1468,6 +1498,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1532,6 +1563,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SWITCH_TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1566,6 +1598,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SWITCH_ACTIONS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1591,6 +1624,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1616,6 +1650,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1641,6 +1676,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1666,6 +1702,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1691,6 +1728,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -1716,6 +1754,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2084,6 +2123,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2109,6 +2149,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REMAINING_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2134,6 +2175,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2159,6 +2201,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2184,6 +2227,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_FREQUENCY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2209,6 +2253,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_FREQUENCY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2234,6 +2279,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_FREQUENCY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2268,6 +2314,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPTIONS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2302,6 +2349,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ON_OFF_TRANSITION_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2336,6 +2384,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ON_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2370,6 +2419,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ON_TRANSITION_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2404,6 +2454,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OFF_TRANSITION_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2438,6 +2489,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DEFAULT_MOVE_RATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2472,6 +2524,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, START_UP_CURRENT_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2497,6 +2550,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2522,6 +2576,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2547,6 +2602,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2572,6 +2628,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2597,6 +2654,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2622,6 +2680,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2702,6 +2761,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_TEXT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2736,6 +2796,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DESCRIPTION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2770,6 +2831,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INACTIVE_TEXT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2804,6 +2866,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OUT_OF_SERVICE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2829,6 +2892,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, POLARITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2863,6 +2927,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRESENT_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2897,6 +2962,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RELIABILITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2922,6 +2988,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, STATUS_FLAGS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2947,6 +3014,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, APPLICATION_TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2972,6 +3040,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -2997,6 +3066,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3022,6 +3092,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3047,6 +3118,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3072,6 +3144,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3097,6 +3170,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3159,6 +3233,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3184,6 +3259,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3209,6 +3285,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3234,6 +3311,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3259,6 +3337,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3284,6 +3363,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3371,6 +3451,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.DescriptorClusterDeviceTypeStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DEVICE_TYPE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3396,6 +3477,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SERVER_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3421,6 +3503,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLIENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3446,6 +3529,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PARTS_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3471,6 +3555,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.DescriptorClusterSemanticTagStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TAG_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3496,6 +3581,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3521,6 +3607,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3546,6 +3633,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3571,6 +3659,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3596,6 +3685,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3621,6 +3711,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3702,6 +3793,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.BindingClusterTargetStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BINDING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3727,6 +3819,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3752,6 +3845,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3777,6 +3871,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3802,6 +3897,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3827,6 +3923,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3852,6 +3949,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3941,6 +4039,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.AccessControlClusterAccessControlEntryStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -3980,6 +4079,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.AccessControlClusterAccessControlExtensionStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EXTENSION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4005,6 +4105,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUBJECTS_PER_ACCESS_CONTROL_ENTRY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4030,6 +4131,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TARGETS_PER_ACCESS_CONTROL_ENTRY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4055,6 +4157,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCESS_CONTROL_ENTRIES_PER_FABRIC_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4080,6 +4183,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4105,6 +4209,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4130,6 +4235,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4155,6 +4261,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4180,6 +4287,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4205,6 +4313,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4586,6 +4695,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.ActionsClusterActionStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTION_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4611,6 +4721,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.ActionsClusterEndpointListStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ENDPOINT_LISTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4636,6 +4747,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SETUP_U_R_L_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4661,6 +4773,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4686,6 +4799,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4711,6 +4825,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4736,6 +4851,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4761,6 +4877,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4786,6 +4903,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4895,6 +5013,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DATA_MODEL_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4920,6 +5039,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, VENDOR_NAME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4945,6 +5065,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, VENDOR_I_D_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4970,6 +5091,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRODUCT_NAME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -4995,6 +5117,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRODUCT_I_D_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5029,6 +5152,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NODE_LABEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5063,6 +5187,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LOCATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5088,6 +5213,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, HARDWARE_VERSION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5113,6 +5239,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, HARDWARE_VERSION_STRING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5138,6 +5265,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SOFTWARE_VERSION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5163,6 +5291,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SOFTWARE_VERSION_STRING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5188,6 +5317,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MANUFACTURING_DATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5213,6 +5343,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PART_NUMBER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5238,6 +5369,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRODUCT_U_R_L_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5263,6 +5395,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRODUCT_LABEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5288,6 +5421,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SERIAL_NUMBER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5322,6 +5456,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LOCAL_CONFIG_DISABLED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5347,6 +5482,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REACHABLE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5372,6 +5508,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNIQUE_I_D_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5397,6 +5534,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             ChipStructs.BasicInformationClusterCapabilityMinimaStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CAPABILITY_MINIMA_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5422,6 +5560,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             ChipStructs.BasicInformationClusterProductAppearanceStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRODUCT_APPEARANCE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5447,6 +5586,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SPECIFICATION_VERSION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5472,6 +5612,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_PATHS_PER_INVOKE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5497,6 +5638,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5522,6 +5664,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5547,6 +5690,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5572,6 +5716,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5597,6 +5742,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5622,6 +5768,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5864,6 +6011,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5889,6 +6037,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5914,6 +6063,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5939,6 +6089,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5964,6 +6115,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -5989,6 +6141,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6113,6 +6266,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.OtaSoftwareUpdateRequestorClusterProviderLocation> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DEFAULT_O_T_A_PROVIDERS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6138,6 +6292,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UPDATE_POSSIBLE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6163,6 +6318,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UPDATE_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6188,6 +6344,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UPDATE_STATE_PROGRESS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6213,6 +6370,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6238,6 +6396,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6263,6 +6422,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6288,6 +6448,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6313,6 +6474,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6338,6 +6500,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6415,6 +6578,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_LOCALE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6440,6 +6604,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<String> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_LOCALES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6465,6 +6630,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6490,6 +6656,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6515,6 +6682,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6540,6 +6708,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6565,6 +6734,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6590,6 +6760,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6668,6 +6839,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, HOUR_FORMAT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6702,6 +6874,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_CALENDAR_TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6727,6 +6900,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_CALENDAR_TYPES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6752,6 +6926,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6777,6 +6952,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6802,6 +6978,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6827,6 +7004,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6852,6 +7030,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6877,6 +7056,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6949,6 +7129,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TEMPERATURE_UNIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6974,6 +7155,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -6999,6 +7181,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7024,6 +7207,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7049,6 +7233,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7074,6 +7259,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7099,6 +7285,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7166,6 +7353,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SOURCES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7191,6 +7379,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7216,6 +7405,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7241,6 +7431,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7266,6 +7457,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7291,6 +7483,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7316,6 +7509,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7458,6 +7652,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, STATUS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7483,6 +7678,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ORDER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7508,6 +7704,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DESCRIPTION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7533,6 +7730,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WIRED_ASSESSED_INPUT_VOLTAGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7558,6 +7756,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WIRED_ASSESSED_INPUT_FREQUENCY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7583,6 +7782,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WIRED_CURRENT_TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7608,6 +7808,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WIRED_ASSESSED_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7633,6 +7834,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WIRED_NOMINAL_VOLTAGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7658,6 +7860,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WIRED_MAXIMUM_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7683,6 +7886,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WIRED_PRESENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7708,6 +7912,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_WIRED_FAULTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7733,6 +7938,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_VOLTAGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7758,6 +7964,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_PERCENT_REMAINING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7783,6 +7990,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_TIME_REMAINING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7808,6 +8016,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_CHARGE_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7833,6 +8042,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_REPLACEMENT_NEEDED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7858,6 +8068,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_REPLACEABILITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7883,6 +8094,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_PRESENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7908,6 +8120,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_BAT_FAULTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7933,6 +8146,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_REPLACEMENT_DESCRIPTION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7958,6 +8172,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_COMMON_DESIGNATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -7983,6 +8198,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_A_N_S_I_DESIGNATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8008,6 +8224,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_I_E_C_DESIGNATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8033,6 +8250,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_APPROVED_CHEMISTRY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8058,6 +8276,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_CAPACITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8083,6 +8302,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_QUANTITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8108,6 +8328,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_CHARGE_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8133,6 +8354,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_TIME_TO_FULL_CHARGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8158,6 +8380,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_FUNCTIONAL_WHILE_CHARGING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8183,6 +8406,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BAT_CHARGING_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8208,6 +8432,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_BAT_CHARGE_FAULTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8233,6 +8458,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ENDPOINT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8258,6 +8484,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8283,6 +8510,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8308,6 +8536,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8333,6 +8562,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8358,6 +8588,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8383,6 +8614,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8594,6 +8826,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BREADCRUMB_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8619,6 +8852,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             ChipStructs.GeneralCommissioningClusterBasicCommissioningInfo value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BASIC_COMMISSIONING_INFO_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8644,6 +8878,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REGULATORY_CONFIG_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8669,6 +8904,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LOCATION_CAPABILITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8694,6 +8930,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTS_CONCURRENT_CONNECTION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8719,6 +8956,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8744,6 +8982,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8769,6 +9008,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8794,6 +9034,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8819,6 +9060,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -8844,6 +9086,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9365,6 +9608,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_NETWORKS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9390,6 +9634,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.NetworkCommissioningClusterNetworkInfoStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NETWORKS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9415,6 +9660,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SCAN_MAX_TIME_SECONDS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9440,6 +9686,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CONNECT_MAX_TIME_SECONDS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9474,6 +9721,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INTERFACE_ENABLED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9499,6 +9747,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LAST_NETWORKING_STATUS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9524,6 +9773,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LAST_NETWORK_I_D_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9549,6 +9799,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LAST_CONNECT_ERROR_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9574,6 +9825,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_WI_FI_BANDS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9599,6 +9851,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_THREAD_FEATURES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9624,6 +9877,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, THREAD_VERSION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9649,6 +9903,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9674,6 +9929,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9699,6 +9955,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9724,6 +9981,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9749,6 +10007,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9774,6 +10033,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9899,6 +10159,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9924,6 +10185,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9949,6 +10211,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9974,6 +10237,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -9999,6 +10263,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10024,6 +10289,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10214,6 +10480,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.GeneralDiagnosticsClusterNetworkInterface> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NETWORK_INTERFACES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10239,6 +10506,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REBOOT_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10264,6 +10532,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UP_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10289,6 +10558,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TOTAL_OPERATIONAL_HOURS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10314,6 +10584,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BOOT_REASON_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10339,6 +10610,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_HARDWARE_FAULTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10364,6 +10636,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_RADIO_FAULTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10389,6 +10662,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_NETWORK_FAULTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10414,6 +10688,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TEST_EVENT_TRIGGERS_ENABLED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10439,6 +10714,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10464,6 +10740,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10489,6 +10766,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10514,6 +10792,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10539,6 +10818,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10564,6 +10844,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10650,6 +10931,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.SoftwareDiagnosticsClusterThreadMetricsStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, THREAD_METRICS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10675,6 +10957,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_HEAP_FREE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10700,6 +10983,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_HEAP_USED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10725,6 +11009,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_HEAP_HIGH_WATERMARK_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10750,6 +11035,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10775,6 +11061,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10800,6 +11087,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10825,6 +11113,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10850,6 +11139,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -10875,6 +11165,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11096,6 +11387,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CHANNEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11121,6 +11413,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ROUTING_ROLE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11146,6 +11439,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NETWORK_NAME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11171,6 +11465,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PAN_ID_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11196,6 +11491,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EXTENDED_PAN_ID_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11221,6 +11517,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MESH_LOCAL_PREFIX_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11246,6 +11543,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OVERRUN_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11271,6 +11569,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.ThreadNetworkDiagnosticsClusterNeighborTableStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NEIGHBOR_TABLE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11296,6 +11595,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.ThreadNetworkDiagnosticsClusterRouteTableStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ROUTE_TABLE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11321,6 +11621,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PARTITION_ID_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11346,6 +11647,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WEIGHTING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11371,6 +11673,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DATA_VERSION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11396,6 +11699,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, STABLE_DATA_VERSION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11421,6 +11725,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LEADER_ROUTER_ID_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11446,6 +11751,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DETACHED_ROLE_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11471,6 +11777,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CHILD_ROLE_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11496,6 +11803,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ROUTER_ROLE_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11521,6 +11829,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LEADER_ROLE_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11546,6 +11855,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTACH_ATTEMPT_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11571,6 +11881,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PARTITION_ID_CHANGE_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11596,6 +11907,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BETTER_PARTITION_ATTACH_ATTEMPT_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11621,6 +11933,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PARENT_CHANGE_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11646,6 +11959,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_TOTAL_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11671,6 +11985,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_UNICAST_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11696,6 +12011,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_BROADCAST_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11721,6 +12037,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_ACK_REQUESTED_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11746,6 +12063,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_ACKED_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11771,6 +12089,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_NO_ACK_REQUESTED_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11796,6 +12115,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_DATA_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11821,6 +12141,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_DATA_POLL_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11846,6 +12167,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_BEACON_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11871,6 +12193,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_BEACON_REQUEST_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11896,6 +12219,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_OTHER_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11921,6 +12245,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_RETRY_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11946,6 +12271,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_DIRECT_MAX_RETRY_EXPIRY_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11971,6 +12297,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_INDIRECT_MAX_RETRY_EXPIRY_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -11996,6 +12323,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_ERR_CCA_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12021,6 +12349,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_ERR_ABORT_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12046,6 +12375,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_ERR_BUSY_CHANNEL_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12071,6 +12401,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_TOTAL_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12096,6 +12427,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_UNICAST_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12121,6 +12453,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_BROADCAST_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12146,6 +12479,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_DATA_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12171,6 +12505,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_DATA_POLL_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12196,6 +12531,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_BEACON_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12221,6 +12557,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_BEACON_REQUEST_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12246,6 +12583,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_OTHER_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12271,6 +12609,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_ADDRESS_FILTERED_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12296,6 +12635,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_DEST_ADDR_FILTERED_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12321,6 +12661,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_DUPLICATED_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12346,6 +12687,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_ERR_NO_FRAME_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12371,6 +12713,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_ERR_UNKNOWN_NEIGHBOR_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12396,6 +12739,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_ERR_INVALID_SRC_ADDR_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12421,6 +12765,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_ERR_SEC_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12446,6 +12791,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_ERR_FCS_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12471,6 +12817,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RX_ERR_OTHER_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12496,6 +12843,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_TIMESTAMP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12521,6 +12869,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PENDING_TIMESTAMP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12546,6 +12895,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DELAY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12571,6 +12921,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.ThreadNetworkDiagnosticsClusterSecurityPolicy value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SECURITY_POLICY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12596,6 +12947,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CHANNEL_PAGE0_MASK_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12621,6 +12973,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.ThreadNetworkDiagnosticsClusterOperationalDatasetComponents value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPERATIONAL_DATASET_COMPONENTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12646,6 +12999,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_NETWORK_FAULTS_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12671,6 +13025,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12696,6 +13051,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12721,6 +13077,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12746,6 +13103,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12771,6 +13129,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12796,6 +13155,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12939,6 +13299,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BSSID_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12964,6 +13325,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SECURITY_TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -12989,6 +13351,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WI_FI_VERSION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13014,6 +13377,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CHANNEL_NUMBER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13039,6 +13403,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RSSI_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13064,6 +13429,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BEACON_LOST_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13089,6 +13455,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BEACON_RX_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13114,6 +13481,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PACKET_MULTICAST_RX_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13139,6 +13507,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PACKET_MULTICAST_TX_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13164,6 +13533,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PACKET_UNICAST_RX_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13189,6 +13559,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PACKET_UNICAST_TX_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13214,6 +13585,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_MAX_RATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13239,6 +13611,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OVERRUN_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13264,6 +13637,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13289,6 +13663,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13314,6 +13689,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13339,6 +13715,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13364,6 +13741,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13389,6 +13767,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13488,6 +13867,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, P_H_Y_RATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13513,6 +13893,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FULL_DUPLEX_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13538,6 +13919,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PACKET_RX_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13563,6 +13945,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PACKET_TX_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13588,6 +13971,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TX_ERR_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13613,6 +13997,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLLISION_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13638,6 +14023,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OVERRUN_COUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13663,6 +14049,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CARRIER_DETECT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13688,6 +14075,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TIME_SINCE_RESET_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13713,6 +14101,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13738,6 +14127,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13763,6 +14153,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13788,6 +14179,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13813,6 +14205,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -13838,6 +14231,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14059,6 +14453,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, U_T_C_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14084,6 +14479,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GRANULARITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14109,6 +14505,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TIME_SOURCE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14134,6 +14531,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.TimeSynchronizationClusterTrustedTimeSourceStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TRUSTED_TIME_SOURCE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14159,6 +14557,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DEFAULT_N_T_P_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14184,6 +14583,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.TimeSynchronizationClusterTimeZoneStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TIME_ZONE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14209,6 +14609,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.TimeSynchronizationClusterDSTOffsetStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, D_S_T_OFFSET_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14234,6 +14635,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LOCAL_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14259,6 +14661,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TIME_ZONE_DATABASE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14284,6 +14687,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, N_T_P_SERVER_AVAILABLE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14309,6 +14713,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TIME_ZONE_LIST_MAX_SIZE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14334,6 +14739,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, D_S_T_OFFSET_LIST_MAX_SIZE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14359,6 +14765,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTS_D_N_S_RESOLVE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14384,6 +14791,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14409,6 +14817,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14434,6 +14843,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14459,6 +14869,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14484,6 +14895,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14509,6 +14921,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14591,6 +15004,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, VENDOR_NAME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14616,6 +15030,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, VENDOR_I_D_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14641,6 +15056,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRODUCT_NAME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14675,6 +15091,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NODE_LABEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14700,6 +15117,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, HARDWARE_VERSION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14725,6 +15143,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, HARDWARE_VERSION_STRING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14750,6 +15169,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SOFTWARE_VERSION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14775,6 +15195,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SOFTWARE_VERSION_STRING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14800,6 +15221,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MANUFACTURING_DATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14825,6 +15247,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PART_NUMBER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14850,6 +15273,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRODUCT_U_R_L_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14875,6 +15299,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRODUCT_LABEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14900,6 +15325,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SERIAL_NUMBER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14925,6 +15351,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REACHABLE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14950,6 +15377,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNIQUE_I_D_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -14975,6 +15403,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             ChipStructs.BridgedDeviceBasicInformationClusterProductAppearanceStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRODUCT_APPEARANCE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15000,6 +15429,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15025,6 +15455,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15050,6 +15481,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15075,6 +15507,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15100,6 +15533,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15125,6 +15559,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15190,6 +15625,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_POSITIONS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15215,6 +15651,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_POSITION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15240,6 +15677,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MULTI_PRESS_MAX_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15265,6 +15703,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15290,6 +15729,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15315,6 +15755,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15340,6 +15781,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15365,6 +15807,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15390,6 +15833,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15526,6 +15970,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WINDOW_STATUS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15551,6 +15996,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ADMIN_FABRIC_INDEX_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15576,6 +16022,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ADMIN_VENDOR_ID_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15601,6 +16048,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15626,6 +16074,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15651,6 +16100,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15676,6 +16126,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15701,6 +16152,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -15726,6 +16178,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16151,6 +16604,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.OperationalCredentialsClusterNOCStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, N_O_CS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16181,6 +16635,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.OperationalCredentialsClusterFabricDescriptorStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FABRICS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16206,6 +16661,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_FABRICS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16231,6 +16687,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COMMISSIONED_FABRICS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16256,6 +16713,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<byte[]> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TRUSTED_ROOT_CERTIFICATES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16281,6 +16739,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_FABRIC_INDEX_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16306,6 +16765,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16331,6 +16791,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16356,6 +16817,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16381,6 +16843,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16406,6 +16869,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16431,6 +16895,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16623,6 +17088,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.GroupKeyManagementClusterGroupKeyMapStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GROUP_KEY_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16653,6 +17119,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.GroupKeyManagementClusterGroupInfoMapStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GROUP_TABLE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16678,6 +17145,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_GROUPS_PER_FABRIC_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16703,6 +17171,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_GROUP_KEYS_PER_FABRIC_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16728,6 +17197,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16753,6 +17223,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16778,6 +17249,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16803,6 +17275,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16828,6 +17301,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16853,6 +17327,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16920,6 +17395,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.FixedLabelClusterLabelStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LABEL_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16945,6 +17421,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16970,6 +17447,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -16995,6 +17473,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17020,6 +17499,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17045,6 +17525,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17070,6 +17551,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17146,6 +17628,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.UserLabelClusterLabelStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LABEL_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17171,6 +17654,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17196,6 +17680,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17221,6 +17706,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17246,6 +17732,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17271,6 +17758,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17296,6 +17784,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17358,6 +17847,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17383,6 +17873,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17408,6 +17899,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17433,6 +17925,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17458,6 +17951,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17483,6 +17977,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17545,6 +18040,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17570,6 +18066,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17595,6 +18092,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17620,6 +18118,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17645,6 +18144,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17670,6 +18170,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17732,6 +18233,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17757,6 +18259,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17782,6 +18285,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17807,6 +18311,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17832,6 +18337,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17857,6 +18363,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17920,6 +18427,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, STATE_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17945,6 +18453,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17970,6 +18479,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -17995,6 +18505,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18020,6 +18531,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18045,6 +18557,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18070,6 +18583,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18249,6 +18763,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, IDLE_MODE_DURATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18274,6 +18789,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_MODE_DURATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18299,6 +18815,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_MODE_THRESHOLD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18329,6 +18846,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.IcdManagementClusterMonitoringRegistrationStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REGISTERED_CLIENTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18354,6 +18872,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, I_C_D_COUNTER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18379,6 +18898,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLIENTS_SUPPORTED_PER_FABRIC_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18404,6 +18924,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, USER_ACTIVE_MODE_TRIGGER_HINT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18429,6 +18950,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, USER_ACTIVE_MODE_TRIGGER_INSTRUCTION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18454,6 +18976,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPERATING_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18479,6 +19002,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18504,6 +19028,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18529,6 +19054,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18554,6 +19080,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18579,6 +19106,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18604,6 +19132,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18745,6 +19274,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SET_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18770,6 +19300,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TIME_REMAINING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18795,6 +19326,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TIMER_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18820,6 +19352,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18845,6 +19378,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18870,6 +19404,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18895,6 +19430,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18920,6 +19456,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -18945,6 +19482,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19141,6 +19679,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable List<String> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PHASE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19166,6 +19705,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_PHASE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19191,6 +19731,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COUNTDOWN_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19216,6 +19757,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.OvenCavityOperationalStateClusterOperationalStateStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPERATIONAL_STATE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19241,6 +19783,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPERATIONAL_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19266,6 +19809,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             ChipStructs.OvenCavityOperationalStateClusterErrorStateStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPERATIONAL_ERROR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19291,6 +19835,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19316,6 +19861,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19341,6 +19887,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19366,6 +19913,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19391,6 +19939,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19416,6 +19965,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19535,6 +20085,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.OvenModeClusterModeOptionStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_MODES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19560,6 +20111,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19594,6 +20146,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, START_UP_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19628,6 +20181,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ON_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19653,6 +20207,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19678,6 +20233,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19703,6 +20259,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19728,6 +20285,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19753,6 +20311,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19778,6 +20337,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19850,6 +20410,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_DRYNESS_LEVELS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19884,6 +20445,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SELECTED_DRYNESS_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19909,6 +20471,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19934,6 +20497,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19959,6 +20523,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -19984,6 +20549,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20009,6 +20575,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20034,6 +20601,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20138,6 +20706,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DESCRIPTION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20163,6 +20732,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, STANDARD_NAMESPACE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20188,6 +20758,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.ModeSelectClusterModeOptionStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_MODES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20213,6 +20784,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20247,6 +20819,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, START_UP_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20281,6 +20854,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ON_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20306,6 +20880,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20331,6 +20906,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20356,6 +20932,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20381,6 +20958,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20406,6 +20984,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20431,6 +21010,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20550,6 +21130,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.LaundryWasherModeClusterModeOptionStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_MODES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20575,6 +21156,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20609,6 +21191,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, START_UP_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20643,6 +21226,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ON_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20668,6 +21252,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20693,6 +21278,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20718,6 +21304,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20743,6 +21330,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20768,6 +21356,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20793,6 +21382,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20912,6 +21502,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.RefrigeratorAndTemperatureControlledCabinetModeClusterModeOptionStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_MODES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20937,6 +21528,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -20971,6 +21563,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, START_UP_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21005,6 +21598,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ON_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21030,6 +21624,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21055,6 +21650,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21080,6 +21676,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21105,6 +21702,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21130,6 +21728,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21155,6 +21754,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21233,6 +21833,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<String> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SPIN_SPEEDS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21267,6 +21868,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SPIN_SPEED_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21301,6 +21903,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_RINSES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21326,6 +21929,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_RINSES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21351,6 +21955,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21376,6 +21981,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21401,6 +22007,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21426,6 +22033,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21451,6 +22059,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21476,6 +22085,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21585,6 +22195,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.RvcRunModeClusterModeOptionStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_MODES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21610,6 +22221,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21635,6 +22247,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21660,6 +22273,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21685,6 +22299,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21710,6 +22325,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21735,6 +22351,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21760,6 +22377,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21869,6 +22487,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.RvcCleanModeClusterModeOptionStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_MODES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21894,6 +22513,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21919,6 +22539,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21944,6 +22565,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21969,6 +22591,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -21994,6 +22617,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22019,6 +22643,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22044,6 +22669,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22140,6 +22766,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TEMPERATURE_SETPOINT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22165,6 +22792,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_TEMPERATURE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22190,6 +22818,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_TEMPERATURE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22215,6 +22844,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, STEP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22240,6 +22870,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SELECTED_TEMPERATURE_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22265,6 +22896,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<String> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_TEMPERATURE_LEVELS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22290,6 +22922,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22315,6 +22948,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22340,6 +22974,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22365,6 +23000,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22390,6 +23026,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22415,6 +23052,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22480,6 +23118,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MASK_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22505,6 +23144,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22530,6 +23170,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22555,6 +23196,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22580,6 +23222,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22605,6 +23248,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22630,6 +23274,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22655,6 +23300,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22680,6 +23326,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22799,6 +23446,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.DishwasherModeClusterModeOptionStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_MODES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22824,6 +23472,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22858,6 +23507,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, START_UP_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22892,6 +23542,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ON_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22917,6 +23568,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22942,6 +23594,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22967,6 +23620,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -22992,6 +23646,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23017,6 +23672,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23042,6 +23698,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23105,6 +23762,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AIR_QUALITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23130,6 +23788,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23155,6 +23814,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23180,6 +23840,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23205,6 +23866,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23230,6 +23892,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23255,6 +23918,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23346,6 +24010,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EXPRESSED_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23371,6 +24036,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SMOKE_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23396,6 +24062,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, C_O_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23421,6 +24088,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BATTERY_ALERT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23446,6 +24114,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DEVICE_MUTED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23471,6 +24140,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TEST_IN_PROGRESS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23496,6 +24166,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, HARDWARE_FAULT_ALERT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23521,6 +24192,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, END_OF_SERVICE_ALERT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23546,6 +24218,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INTERCONNECT_SMOKE_ALARM_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23571,6 +24244,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INTERCONNECT_C_O_ALARM_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23596,6 +24270,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CONTAMINATION_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23630,6 +24305,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SMOKE_SENSITIVITY_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23655,6 +24331,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EXPIRY_DATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23680,6 +24357,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23705,6 +24383,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23730,6 +24409,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23755,6 +24435,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23780,6 +24461,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23805,6 +24487,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23911,6 +24594,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MASK_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23936,6 +24620,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LATCH_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23961,6 +24646,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -23986,6 +24672,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24011,6 +24698,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24036,6 +24724,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24061,6 +24750,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24086,6 +24776,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24111,6 +24802,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24136,6 +24828,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24204,6 +24897,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.MicrowaveOvenModeClusterModeOptionStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_MODES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24229,6 +24923,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24254,6 +24949,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24279,6 +24975,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24304,6 +25001,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24329,6 +25027,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24354,6 +25053,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24379,6 +25079,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24510,6 +25211,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COOK_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24535,6 +25237,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_COOK_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24560,6 +25263,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, POWER_SETTING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24585,6 +25289,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24610,6 +25315,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24635,6 +25341,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, POWER_STEP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24660,6 +25367,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_WATTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24685,6 +25393,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SELECTED_WATT_INDEX_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24710,6 +25419,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WATT_RATING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24735,6 +25445,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24760,6 +25471,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24785,6 +25497,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24810,6 +25523,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24835,6 +25549,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -24860,6 +25575,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25056,6 +25772,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable List<String> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PHASE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25081,6 +25798,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_PHASE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25106,6 +25824,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COUNTDOWN_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25131,6 +25850,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.OperationalStateClusterOperationalStateStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPERATIONAL_STATE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25156,6 +25876,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPERATIONAL_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25181,6 +25902,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             ChipStructs.OperationalStateClusterErrorStateStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPERATIONAL_ERROR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25206,6 +25928,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25231,6 +25954,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25256,6 +25980,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25281,6 +26006,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25306,6 +26032,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25331,6 +26058,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25501,6 +26229,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable List<String> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PHASE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25526,6 +26255,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_PHASE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25551,6 +26281,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COUNTDOWN_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25576,6 +26307,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.RvcOperationalStateClusterOperationalStateStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPERATIONAL_STATE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25601,6 +26333,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPERATIONAL_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25626,6 +26359,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             ChipStructs.RvcOperationalStateClusterErrorStateStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPERATIONAL_ERROR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25651,6 +26385,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25676,6 +26411,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25701,6 +26437,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25726,6 +26463,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25751,6 +26489,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -25776,6 +26515,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26278,6 +27018,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LAST_CONFIGURED_BY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26303,6 +27044,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SCENE_TABLE_SIZE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26333,6 +27075,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.ScenesManagementClusterSceneInfoStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FABRIC_SCENE_INFO_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26358,6 +27101,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26383,6 +27127,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26408,6 +27153,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26433,6 +27179,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26458,6 +27205,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26483,6 +27231,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26575,6 +27324,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CONDITION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26600,6 +27350,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DEGRADATION_DIRECTION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26625,6 +27376,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CHANGE_INDICATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26650,6 +27402,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, IN_PLACE_INDICATOR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26684,6 +27437,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LAST_CHANGED_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26709,6 +27463,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.HepaFilterMonitoringClusterReplacementProductStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REPLACEMENT_PRODUCT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26734,6 +27489,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26759,6 +27515,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26784,6 +27541,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26809,6 +27567,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26834,6 +27593,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26859,6 +27619,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26951,6 +27712,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CONDITION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -26976,6 +27738,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DEGRADATION_DIRECTION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27001,6 +27764,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CHANGE_INDICATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27026,6 +27790,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, IN_PLACE_INDICATOR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27060,6 +27825,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LAST_CHANGED_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27085,6 +27851,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.ActivatedCarbonFilterMonitoringClusterReplacementProductStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REPLACEMENT_PRODUCT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27110,6 +27877,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27135,6 +27903,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27160,6 +27929,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27185,6 +27955,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27210,6 +27981,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27235,6 +28007,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27354,6 +28127,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_SENSITIVITY_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27379,6 +28153,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_SENSITIVITY_LEVELS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27404,6 +28179,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DEFAULT_SENSITIVITY_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27429,6 +28205,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ALARMS_ACTIVE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27454,6 +28231,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ALARMS_SUPPRESSED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27479,6 +28257,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ALARMS_ENABLED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27504,6 +28283,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ALARMS_SUPPORTED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27529,6 +28309,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SENSOR_FAULT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27554,6 +28335,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27579,6 +28361,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27604,6 +28387,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27629,6 +28413,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27654,6 +28439,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27679,6 +28465,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27824,6 +28611,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPEN_DURATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27858,6 +28646,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DEFAULT_OPEN_DURATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27883,6 +28672,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AUTO_CLOSE_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27908,6 +28698,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REMAINING_DURATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27933,6 +28724,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27958,6 +28750,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TARGET_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -27983,6 +28776,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28008,6 +28802,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TARGET_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28042,6 +28837,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DEFAULT_OPEN_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28067,6 +28863,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, VALVE_FAULT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28092,6 +28889,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LEVEL_STEP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28117,6 +28915,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28142,6 +28941,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28167,6 +28967,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28192,6 +28993,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28217,6 +29019,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28242,6 +29045,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28391,6 +29195,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, POWER_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28416,6 +29221,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_MEASUREMENT_TYPES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28441,6 +29247,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.ElectricalPowerMeasurementClusterMeasurementAccuracyStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCURACY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28466,6 +29273,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.ElectricalPowerMeasurementClusterMeasurementRangeStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RANGES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28491,6 +29299,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, VOLTAGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28516,6 +29325,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28541,6 +29351,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REACTIVE_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28566,6 +29377,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, APPARENT_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28591,6 +29403,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28616,6 +29429,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REACTIVE_POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28641,6 +29455,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, APPARENT_POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28666,6 +29481,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, R_M_S_VOLTAGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28691,6 +29507,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, R_M_S_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28716,6 +29533,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, R_M_S_POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28741,6 +29559,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FREQUENCY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28766,6 +29585,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable List<ChipStructs.ElectricalPowerMeasurementClusterHarmonicMeasurementStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, HARMONIC_CURRENTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28791,6 +29611,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable List<ChipStructs.ElectricalPowerMeasurementClusterHarmonicMeasurementStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, HARMONIC_PHASES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28816,6 +29637,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, POWER_FACTOR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28841,6 +29663,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NEUTRAL_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28866,6 +29689,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28891,6 +29715,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28916,6 +29741,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28941,6 +29767,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28966,6 +29793,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -28991,6 +29819,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29083,6 +29912,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             ChipStructs.ElectricalEnergyMeasurementClusterMeasurementAccuracyStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCURACY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29108,6 +29938,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.ElectricalEnergyMeasurementClusterEnergyMeasurementStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CUMULATIVE_ENERGY_IMPORTED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29133,6 +29964,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.ElectricalEnergyMeasurementClusterEnergyMeasurementStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CUMULATIVE_ENERGY_EXPORTED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29158,6 +29990,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.ElectricalEnergyMeasurementClusterEnergyMeasurementStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PERIODIC_ENERGY_IMPORTED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29183,6 +30016,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.ElectricalEnergyMeasurementClusterEnergyMeasurementStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PERIODIC_ENERGY_EXPORTED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29208,6 +30042,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.ElectricalEnergyMeasurementClusterCumulativeEnergyResetStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CUMULATIVE_ENERGY_RESET_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29233,6 +30068,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29258,6 +30094,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29283,6 +30120,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29308,6 +30146,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29333,6 +30172,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29358,6 +30198,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29540,6 +30381,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.DemandResponseLoadControlClusterLoadControlProgramStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LOAD_CONTROL_PROGRAMS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29565,6 +30407,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_LOAD_CONTROL_PROGRAMS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29590,6 +30433,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.DemandResponseLoadControlClusterLoadControlEventStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29615,6 +30459,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.DemandResponseLoadControlClusterLoadControlEventStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_EVENTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29640,6 +30485,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_EVENTS_PER_PROGRAM_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29665,6 +30511,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_TRANSITIONS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29699,6 +30546,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DEFAULT_RANDOM_START_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29733,6 +30581,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DEFAULT_RANDOM_DURATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29758,6 +30607,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29783,6 +30633,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29808,6 +30659,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29833,6 +30685,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29858,6 +30711,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -29883,6 +30737,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30019,6 +30874,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.MessagesClusterMessageStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MESSAGES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30044,6 +30900,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<byte[]> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_MESSAGE_I_DS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30069,6 +30926,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30094,6 +30952,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30119,6 +30978,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30144,6 +31004,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30169,6 +31030,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30194,6 +31056,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30335,17 +31198,17 @@ public class ChipClusters {
         }}, commandId, commandArgs, timedInvokeTimeoutMs);
     }
 
-    public void modifyForecastRequest(DefaultClusterCallback callback, Long forecastId, ArrayList<ChipStructs.DeviceEnergyManagementClusterSlotAdjustmentStruct> slotAdjustments, Integer cause) {
-      modifyForecastRequest(callback, forecastId, slotAdjustments, cause, 0);
+    public void modifyForecastRequest(DefaultClusterCallback callback, Long forecastID, ArrayList<ChipStructs.DeviceEnergyManagementClusterSlotAdjustmentStruct> slotAdjustments, Integer cause) {
+      modifyForecastRequest(callback, forecastID, slotAdjustments, cause, 0);
     }
 
-    public void modifyForecastRequest(DefaultClusterCallback callback, Long forecastId, ArrayList<ChipStructs.DeviceEnergyManagementClusterSlotAdjustmentStruct> slotAdjustments, Integer cause, int timedInvokeTimeoutMs) {
+    public void modifyForecastRequest(DefaultClusterCallback callback, Long forecastID, ArrayList<ChipStructs.DeviceEnergyManagementClusterSlotAdjustmentStruct> slotAdjustments, Integer cause, int timedInvokeTimeoutMs) {
       final long commandId = 5L;
 
       ArrayList<StructElement> elements = new ArrayList<>();
-      final long forecastIdFieldID = 0L;
-      BaseTLVType forecastIdtlvValue = new UIntType(forecastId);
-      elements.add(new StructElement(forecastIdFieldID, forecastIdtlvValue));
+      final long forecastIDFieldID = 0L;
+      BaseTLVType forecastIDtlvValue = new UIntType(forecastID);
+      elements.add(new StructElement(forecastIDFieldID, forecastIDtlvValue));
 
       final long slotAdjustmentsFieldID = 1L;
       BaseTLVType slotAdjustmentstlvValue = ArrayType.generateArrayType(slotAdjustments, (elementslotAdjustments) -> elementslotAdjustments.encodeTlv());
@@ -30404,7 +31267,7 @@ public class ChipClusters {
     }
 
     public interface PowerAdjustmentCapabilityAttributeCallback extends BaseAttributeCallback {
-      void onSuccess(@Nullable List<ChipStructs.DeviceEnergyManagementClusterPowerAdjustStruct> value);
+      void onSuccess(@Nullable ChipStructs.DeviceEnergyManagementClusterPowerAdjustCapabilityStruct value);
     }
 
     public interface ForecastAttributeCallback extends BaseAttributeCallback {
@@ -30448,6 +31311,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, E_S_A_TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30473,6 +31337,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, E_S_A_CAN_GENERATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30498,6 +31363,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, E_S_A_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30523,6 +31389,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ABS_MIN_POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30548,6 +31415,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ABS_MAX_POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30559,7 +31427,7 @@ public class ChipClusters {
       readAttribute(new ReportCallbackImpl(callback, path) {
           @Override
           public void onSuccess(byte[] tlv) {
-            @Nullable List<ChipStructs.DeviceEnergyManagementClusterPowerAdjustStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            @Nullable ChipStructs.DeviceEnergyManagementClusterPowerAdjustCapabilityStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
             callback.onSuccess(value);
           }
         }, POWER_ADJUSTMENT_CAPABILITY_ATTRIBUTE_ID, true);
@@ -30572,7 +31440,8 @@ public class ChipClusters {
       subscribeAttribute(new ReportCallbackImpl(callback, path) {
           @Override
           public void onSuccess(byte[] tlv) {
-            @Nullable List<ChipStructs.DeviceEnergyManagementClusterPowerAdjustStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            @Nullable ChipStructs.DeviceEnergyManagementClusterPowerAdjustCapabilityStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, POWER_ADJUSTMENT_CAPABILITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30598,6 +31467,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.DeviceEnergyManagementClusterForecastStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FORECAST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30623,6 +31493,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPT_OUT_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30648,6 +31519,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30673,6 +31545,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30698,6 +31571,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30723,6 +31597,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30748,6 +31623,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -30773,6 +31649,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31047,6 +31924,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31072,6 +31950,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPLY_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31097,6 +31976,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FAULT_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31122,6 +32002,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CHARGING_ENABLED_UNTIL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31147,6 +32028,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DISCHARGING_ENABLED_UNTIL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31172,6 +32054,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CIRCUIT_CAPACITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31197,6 +32080,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MINIMUM_CHARGE_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31222,6 +32106,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAXIMUM_CHARGE_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31247,6 +32132,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAXIMUM_DISCHARGE_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31281,6 +32167,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, USER_MAXIMUM_CHARGE_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31315,6 +32202,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RANDOMIZATION_DELAY_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31340,6 +32228,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NEXT_CHARGE_START_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31365,6 +32254,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NEXT_CHARGE_TARGET_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31390,6 +32280,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NEXT_CHARGE_REQUIRED_ENERGY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31415,6 +32306,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NEXT_CHARGE_TARGET_SO_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31449,6 +32341,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, APPROXIMATE_E_V_EFFICIENCY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31474,6 +32367,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, STATE_OF_CHARGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31499,6 +32393,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BATTERY_CAPACITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31524,6 +32419,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, VEHICLE_I_D_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31549,6 +32445,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SESSION_I_D_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31574,6 +32471,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SESSION_DURATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31599,6 +32497,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SESSION_ENERGY_CHARGED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31624,6 +32523,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SESSION_ENERGY_DISCHARGED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31649,6 +32549,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31674,6 +32575,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31699,6 +32601,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31724,6 +32627,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31749,6 +32653,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31774,6 +32679,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31853,6 +32759,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.EnergyPreferenceClusterBalanceStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ENERGY_BALANCES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31887,6 +32794,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_ENERGY_BALANCE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31912,6 +32820,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ENERGY_PRIORITIES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31937,6 +32846,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.EnergyPreferenceClusterBalanceStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LOW_POWER_MODE_SENSITIVITIES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31971,6 +32881,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_LOW_POWER_MODE_SENSITIVITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -31996,6 +32907,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32021,6 +32933,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32046,6 +32959,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32071,6 +32985,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32096,6 +33011,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32121,6 +33037,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32193,6 +33110,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVAILABLE_ENDPOINTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32218,6 +33136,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_ENDPOINTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32243,6 +33162,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32268,6 +33188,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32293,6 +33214,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32318,6 +33240,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32343,6 +33266,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32368,6 +33292,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32487,6 +33412,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.EnergyEvseModeClusterModeOptionStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_MODES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32512,6 +33438,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32546,6 +33473,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, START_UP_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32580,6 +33508,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ON_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32605,6 +33534,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32630,6 +33560,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32655,6 +33586,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32680,6 +33612,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32705,6 +33638,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32730,6 +33664,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32849,6 +33784,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.DeviceEnergyManagementModeClusterModeOptionStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_MODES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32874,6 +33810,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32908,6 +33845,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, START_UP_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32942,6 +33880,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ON_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32967,6 +33906,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -32992,6 +33932,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -33017,6 +33958,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -33042,6 +33984,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -33067,6 +34010,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -33092,6 +34036,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34031,6 +34976,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LOCK_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34056,6 +35002,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LOCK_TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34081,6 +35028,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTUATOR_ENABLED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34106,6 +35054,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DOOR_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34140,6 +35089,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DOOR_OPEN_EVENTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34174,6 +35124,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DOOR_CLOSED_EVENTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34208,6 +35159,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPEN_PERIOD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34233,6 +35185,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_TOTAL_USERS_SUPPORTED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34258,6 +35211,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_P_I_N_USERS_SUPPORTED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34283,6 +35237,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_R_F_I_D_USERS_SUPPORTED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34308,6 +35263,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_WEEK_DAY_SCHEDULES_SUPPORTED_PER_USER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34333,6 +35289,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_YEAR_DAY_SCHEDULES_SUPPORTED_PER_USER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34358,6 +35315,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_HOLIDAY_SCHEDULES_SUPPORTED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34383,6 +35341,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_P_I_N_CODE_LENGTH_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34408,6 +35367,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_P_I_N_CODE_LENGTH_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34433,6 +35393,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_R_F_I_D_CODE_LENGTH_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34458,6 +35419,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_R_F_I_D_CODE_LENGTH_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34483,6 +35445,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CREDENTIAL_RULES_SUPPORT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34508,6 +35471,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_CREDENTIALS_SUPPORTED_PER_USER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34542,6 +35506,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LANGUAGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34576,6 +35541,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, L_E_D_SETTINGS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34610,6 +35576,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AUTO_RELOCK_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34644,6 +35611,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SOUND_VOLUME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34678,6 +35646,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPERATING_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34703,6 +35672,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_OPERATING_MODES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34728,6 +35698,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DEFAULT_CONFIGURATION_REGISTER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34762,6 +35733,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ENABLE_LOCAL_PROGRAMMING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34796,6 +35768,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ENABLE_ONE_TOUCH_LOCKING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34830,6 +35803,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ENABLE_INSIDE_STATUS_L_E_D_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34864,6 +35838,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ENABLE_PRIVACY_MODE_BUTTON_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34898,6 +35873,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LOCAL_PROGRAMMING_FEATURES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34932,6 +35908,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WRONG_CODE_ENTRY_LIMIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -34966,6 +35943,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, USER_CODE_TEMPORARY_DISABLE_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35000,6 +35978,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SEND_P_I_N_OVER_THE_AIR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35034,6 +36013,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REQUIRE_P_I_NFOR_REMOTE_OPERATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35068,6 +36048,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EXPIRING_USER_TIMEOUT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35093,6 +36074,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ALIRO_READER_VERIFICATION_KEY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35118,6 +36100,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ALIRO_READER_GROUP_IDENTIFIER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35143,6 +36126,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ALIRO_READER_GROUP_SUB_IDENTIFIER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35168,6 +36152,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<byte[]> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ALIRO_EXPEDITED_TRANSACTION_SUPPORTED_PROTOCOL_VERSIONS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35193,6 +36178,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ALIRO_GROUP_RESOLVING_KEY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35218,6 +36204,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<byte[]> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ALIRO_SUPPORTED_B_L_E_U_W_B_PROTOCOL_VERSIONS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35243,6 +36230,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ALIRO_B_L_E_ADVERTISING_VERSION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35268,6 +36256,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_ALIRO_CREDENTIAL_ISSUER_KEYS_SUPPORTED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35293,6 +36282,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_ALIRO_ENDPOINT_KEYS_SUPPORTED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35318,6 +36308,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35343,6 +36334,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35368,6 +36360,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35393,6 +36386,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35418,6 +36412,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35443,6 +36438,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35687,6 +36683,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35712,6 +36709,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PHYSICAL_CLOSED_LIMIT_LIFT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35737,6 +36735,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PHYSICAL_CLOSED_LIMIT_TILT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35762,6 +36761,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_POSITION_LIFT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35787,6 +36787,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_POSITION_TILT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35812,6 +36813,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_ACTUATIONS_LIFT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35837,6 +36839,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_ACTUATIONS_TILT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35862,6 +36865,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CONFIG_STATUS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35887,6 +36891,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_POSITION_LIFT_PERCENTAGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35912,6 +36917,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_POSITION_TILT_PERCENTAGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35937,6 +36943,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPERATIONAL_STATUS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35962,6 +36969,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TARGET_POSITION_LIFT_PERCENT100THS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -35987,6 +36995,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TARGET_POSITION_TILT_PERCENT100THS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36012,6 +37021,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, END_PRODUCT_TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36037,6 +37047,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_POSITION_LIFT_PERCENT100THS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36062,6 +37073,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_POSITION_TILT_PERCENT100THS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36087,6 +37099,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INSTALLED_OPEN_LIMIT_LIFT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36112,6 +37125,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INSTALLED_CLOSED_LIMIT_LIFT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36137,6 +37151,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INSTALLED_OPEN_LIMIT_TILT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36162,6 +37177,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INSTALLED_CLOSED_LIMIT_TILT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36196,6 +37212,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36221,6 +37238,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SAFETY_STATUS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36246,6 +37264,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36271,6 +37290,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36296,6 +37316,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36321,6 +37342,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36346,6 +37368,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36371,6 +37394,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36479,6 +37503,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BARRIER_MOVING_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36504,6 +37529,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BARRIER_SAFETY_STATUS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36529,6 +37555,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BARRIER_CAPABILITIES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36563,6 +37590,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BARRIER_OPEN_EVENTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36597,6 +37625,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BARRIER_CLOSE_EVENTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36631,6 +37660,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BARRIER_COMMAND_OPEN_EVENTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36665,6 +37695,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BARRIER_COMMAND_CLOSE_EVENTS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36699,6 +37730,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BARRIER_OPEN_PERIOD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36733,6 +37765,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BARRIER_CLOSE_PERIOD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36758,6 +37791,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BARRIER_POSITION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36783,6 +37817,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36808,6 +37843,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36833,6 +37869,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36858,6 +37895,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36883,6 +37921,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -36908,6 +37947,464 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+  }
+
+  public static class ServiceAreaCluster extends BaseChipCluster {
+    public static final long CLUSTER_ID = 336L;
+
+    private static final long SUPPORTED_LOCATIONS_ATTRIBUTE_ID = 0L;
+    private static final long SUPPORTED_MAPS_ATTRIBUTE_ID = 1L;
+    private static final long SELECTED_LOCATIONS_ATTRIBUTE_ID = 2L;
+    private static final long CURRENT_LOCATION_ATTRIBUTE_ID = 3L;
+    private static final long ESTIMATED_END_TIME_ATTRIBUTE_ID = 4L;
+    private static final long PROGRESS_ATTRIBUTE_ID = 5L;
+    private static final long GENERATED_COMMAND_LIST_ATTRIBUTE_ID = 65528L;
+    private static final long ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID = 65529L;
+    private static final long EVENT_LIST_ATTRIBUTE_ID = 65530L;
+    private static final long ATTRIBUTE_LIST_ATTRIBUTE_ID = 65531L;
+    private static final long FEATURE_MAP_ATTRIBUTE_ID = 65532L;
+    private static final long CLUSTER_REVISION_ATTRIBUTE_ID = 65533L;
+
+    public ServiceAreaCluster(long devicePtr, int endpointId) {
+      super(devicePtr, endpointId, CLUSTER_ID);
+    }
+
+    @Override
+    @Deprecated
+    public long initWithDevice(long devicePtr, int endpointId) {
+      return 0L;
+    }
+
+    public void selectLocations(SelectLocationsResponseCallback callback, @Nullable ArrayList<Long> newLocations) {
+      selectLocations(callback, newLocations, 0);
+    }
+
+    public void selectLocations(SelectLocationsResponseCallback callback, @Nullable ArrayList<Long> newLocations, int timedInvokeTimeoutMs) {
+      final long commandId = 0L;
+
+      ArrayList<StructElement> elements = new ArrayList<>();
+      final long newLocationsFieldID = 0L;
+      BaseTLVType newLocationstlvValue = newLocations != null ? ArrayType.generateArrayType(newLocations, (elementnewLocations) -> new UIntType(elementnewLocations)) : new NullType();
+      elements.add(new StructElement(newLocationsFieldID, newLocationstlvValue));
+
+      StructType commandArgs = new StructType(elements);
+      invoke(new InvokeCallbackImpl(callback) {
+          @Override
+          public void onResponse(StructType invokeStructValue) {
+          final long statusFieldID = 0L;
+          Integer status = null;
+          final long statusTextFieldID = 1L;
+          Optional<String> statusText = Optional.empty();
+          for (StructElement element: invokeStructValue.value()) {
+            if (element.contextTagNum() == statusFieldID) {
+              if (element.value(BaseTLVType.class).type() == TLVType.UInt) {
+                UIntType castingValue = element.value(UIntType.class);
+                status = castingValue.value(Integer.class);
+              }
+            } else if (element.contextTagNum() == statusTextFieldID) {
+              if (element.value(BaseTLVType.class).type() == TLVType.String) {
+                StringType castingValue = element.value(StringType.class);
+                statusText = Optional.of(castingValue.value(String.class));
+              }
+            }
+          }
+          callback.onSuccess(status, statusText);
+        }}, commandId, commandArgs, timedInvokeTimeoutMs);
+    }
+
+    public void skipCurrentLocation(SkipCurrentLocationResponseCallback callback) {
+      skipCurrentLocation(callback, 0);
+    }
+
+    public void skipCurrentLocation(SkipCurrentLocationResponseCallback callback, int timedInvokeTimeoutMs) {
+      final long commandId = 2L;
+
+      ArrayList<StructElement> elements = new ArrayList<>();
+      StructType commandArgs = new StructType(elements);
+      invoke(new InvokeCallbackImpl(callback) {
+          @Override
+          public void onResponse(StructType invokeStructValue) {
+          final long statusFieldID = 0L;
+          Integer status = null;
+          final long statusTextFieldID = 1L;
+          Optional<String> statusText = Optional.empty();
+          for (StructElement element: invokeStructValue.value()) {
+            if (element.contextTagNum() == statusFieldID) {
+              if (element.value(BaseTLVType.class).type() == TLVType.UInt) {
+                UIntType castingValue = element.value(UIntType.class);
+                status = castingValue.value(Integer.class);
+              }
+            } else if (element.contextTagNum() == statusTextFieldID) {
+              if (element.value(BaseTLVType.class).type() == TLVType.String) {
+                StringType castingValue = element.value(StringType.class);
+                statusText = Optional.of(castingValue.value(String.class));
+              }
+            }
+          }
+          callback.onSuccess(status, statusText);
+        }}, commandId, commandArgs, timedInvokeTimeoutMs);
+    }
+
+    public interface SelectLocationsResponseCallback extends BaseClusterCallback {
+      void onSuccess(Integer status, Optional<String> statusText);
+    }
+
+    public interface SkipCurrentLocationResponseCallback extends BaseClusterCallback {
+      void onSuccess(Integer status, Optional<String> statusText);
+    }
+
+    public interface SupportedLocationsAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<ChipStructs.ServiceAreaClusterLocationStruct> value);
+    }
+
+    public interface SupportedMapsAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(@Nullable List<ChipStructs.ServiceAreaClusterMapStruct> value);
+    }
+
+    public interface SelectedLocationsAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(@Nullable List<Long> value);
+    }
+
+    public interface CurrentLocationAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(@Nullable Long value);
+    }
+
+    public interface EstimatedEndTimeAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(@Nullable Long value);
+    }
+
+    public interface ProgressAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(@Nullable List<ChipStructs.ServiceAreaClusterProgressStruct> value);
+    }
+
+    public interface GeneratedCommandListAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<Long> value);
+    }
+
+    public interface AcceptedCommandListAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<Long> value);
+    }
+
+    public interface EventListAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<Long> value);
+    }
+
+    public interface AttributeListAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<Long> value);
+    }
+
+    public void readSupportedLocationsAttribute(
+        SupportedLocationsAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, SUPPORTED_LOCATIONS_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<ChipStructs.ServiceAreaClusterLocationStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, SUPPORTED_LOCATIONS_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeSupportedLocationsAttribute(
+        SupportedLocationsAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, SUPPORTED_LOCATIONS_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<ChipStructs.ServiceAreaClusterLocationStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, SUPPORTED_LOCATIONS_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readSupportedMapsAttribute(
+        SupportedMapsAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, SUPPORTED_MAPS_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            @Nullable List<ChipStructs.ServiceAreaClusterMapStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, SUPPORTED_MAPS_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeSupportedMapsAttribute(
+        SupportedMapsAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, SUPPORTED_MAPS_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            @Nullable List<ChipStructs.ServiceAreaClusterMapStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, SUPPORTED_MAPS_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readSelectedLocationsAttribute(
+        SelectedLocationsAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, SELECTED_LOCATIONS_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            @Nullable List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, SELECTED_LOCATIONS_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeSelectedLocationsAttribute(
+        SelectedLocationsAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, SELECTED_LOCATIONS_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            @Nullable List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, SELECTED_LOCATIONS_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readCurrentLocationAttribute(
+        CurrentLocationAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, CURRENT_LOCATION_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, CURRENT_LOCATION_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeCurrentLocationAttribute(
+        CurrentLocationAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, CURRENT_LOCATION_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, CURRENT_LOCATION_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readEstimatedEndTimeAttribute(
+        EstimatedEndTimeAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ESTIMATED_END_TIME_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ESTIMATED_END_TIME_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeEstimatedEndTimeAttribute(
+        EstimatedEndTimeAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ESTIMATED_END_TIME_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ESTIMATED_END_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readProgressAttribute(
+        ProgressAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, PROGRESS_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            @Nullable List<ChipStructs.ServiceAreaClusterProgressStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, PROGRESS_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeProgressAttribute(
+        ProgressAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, PROGRESS_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            @Nullable List<ChipStructs.ServiceAreaClusterProgressStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, PROGRESS_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readGeneratedCommandListAttribute(
+        GeneratedCommandListAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, GENERATED_COMMAND_LIST_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeGeneratedCommandListAttribute(
+        GeneratedCommandListAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, GENERATED_COMMAND_LIST_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readAcceptedCommandListAttribute(
+        AcceptedCommandListAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeAcceptedCommandListAttribute(
+        AcceptedCommandListAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readEventListAttribute(
+        EventListAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, EVENT_LIST_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, EVENT_LIST_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeEventListAttribute(
+        EventListAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, EVENT_LIST_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readAttributeListAttribute(
+        AttributeListAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ATTRIBUTE_LIST_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ATTRIBUTE_LIST_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeAttributeListAttribute(
+        AttributeListAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ATTRIBUTE_LIST_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readFeatureMapAttribute(
+        LongAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, FEATURE_MAP_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, FEATURE_MAP_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeFeatureMapAttribute(
+        LongAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, FEATURE_MAP_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readClusterRevisionAttribute(
+        IntegerAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, CLUSTER_REVISION_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, CLUSTER_REVISION_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeClusterRevisionAttribute(
+        IntegerAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, CLUSTER_REVISION_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37065,6 +38562,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_PRESSURE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37090,6 +38588,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_SPEED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37115,6 +38614,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_FLOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37140,6 +38640,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_CONST_PRESSURE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37165,6 +38666,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_CONST_PRESSURE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37190,6 +38692,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_COMP_PRESSURE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37215,6 +38718,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_COMP_PRESSURE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37240,6 +38744,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_CONST_SPEED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37265,6 +38770,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_CONST_SPEED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37290,6 +38796,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_CONST_FLOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37315,6 +38822,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_CONST_FLOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37340,6 +38848,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_CONST_TEMP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37365,6 +38874,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_CONST_TEMP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37390,6 +38900,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PUMP_STATUS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37415,6 +38926,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EFFECTIVE_OPERATION_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37440,6 +38952,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EFFECTIVE_CONTROL_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37465,6 +38978,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CAPACITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37490,6 +39004,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SPEED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37524,6 +39039,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LIFETIME_RUNNING_HOURS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37549,6 +39065,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37583,6 +39100,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LIFETIME_ENERGY_CONSUMED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37617,6 +39135,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPERATION_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37651,6 +39170,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CONTROL_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37676,6 +39196,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37701,6 +39222,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37726,6 +39248,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37751,6 +39274,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37776,6 +39300,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -37801,6 +39326,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38269,6 +39795,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LOCAL_TEMPERATURE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38294,6 +39821,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OUTDOOR_TEMPERATURE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38319,6 +39847,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OCCUPANCY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38344,6 +39873,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ABS_MIN_HEAT_SETPOINT_LIMIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38369,6 +39899,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ABS_MAX_HEAT_SETPOINT_LIMIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38394,6 +39925,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ABS_MIN_COOL_SETPOINT_LIMIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38419,6 +39951,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ABS_MAX_COOL_SETPOINT_LIMIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38444,6 +39977,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, P_I_COOLING_DEMAND_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38469,6 +40003,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, P_I_HEATING_DEMAND_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38503,6 +40038,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, H_V_A_C_SYSTEM_TYPE_CONFIGURATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38537,6 +40073,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LOCAL_TEMPERATURE_CALIBRATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38571,6 +40108,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OCCUPIED_COOLING_SETPOINT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38605,6 +40143,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OCCUPIED_HEATING_SETPOINT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38639,6 +40178,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNOCCUPIED_COOLING_SETPOINT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38673,6 +40213,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNOCCUPIED_HEATING_SETPOINT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38707,6 +40248,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_HEAT_SETPOINT_LIMIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38741,6 +40283,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_HEAT_SETPOINT_LIMIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38775,6 +40318,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_COOL_SETPOINT_LIMIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38809,6 +40353,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_COOL_SETPOINT_LIMIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38843,6 +40388,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_SETPOINT_DEAD_BAND_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38877,6 +40423,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REMOTE_SENSING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38911,6 +40458,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CONTROL_SEQUENCE_OF_OPERATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38945,6 +40493,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SYSTEM_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38970,6 +40519,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, THERMOSTAT_RUNNING_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -38995,6 +40545,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, START_OF_WEEK_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39020,6 +40571,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_WEEKLY_TRANSITIONS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39045,6 +40597,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_DAILY_TRANSITIONS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39079,6 +40632,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TEMPERATURE_SETPOINT_HOLD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39113,6 +40667,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TEMPERATURE_SETPOINT_HOLD_DURATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39147,6 +40702,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, THERMOSTAT_PROGRAMMING_OPERATION_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39172,6 +40728,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, THERMOSTAT_RUNNING_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39197,6 +40754,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SETPOINT_CHANGE_SOURCE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39222,6 +40780,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SETPOINT_CHANGE_AMOUNT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39247,6 +40806,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SETPOINT_CHANGE_SOURCE_TIMESTAMP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39281,6 +40841,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OCCUPIED_SETBACK_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39306,6 +40867,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OCCUPIED_SETBACK_MIN_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39331,6 +40893,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OCCUPIED_SETBACK_MAX_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39365,6 +40928,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNOCCUPIED_SETBACK_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39390,6 +40954,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNOCCUPIED_SETBACK_MIN_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39415,6 +40980,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNOCCUPIED_SETBACK_MAX_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39449,6 +41015,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EMERGENCY_HEAT_DELTA_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39483,6 +41050,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, A_C_TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39517,6 +41085,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, A_C_CAPACITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39551,6 +41120,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, A_C_REFRIGERANT_TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39585,6 +41155,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, A_C_COMPRESSOR_TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39619,6 +41190,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, A_C_ERROR_CODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39653,6 +41225,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, A_C_LOUVER_POSITION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39678,6 +41251,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, A_C_COIL_TEMPERATURE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39712,6 +41286,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, A_C_CAPACITYFORMAT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39737,6 +41312,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.ThermostatClusterPresetTypeStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRESET_TYPES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39762,6 +41338,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.ThermostatClusterScheduleTypeStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SCHEDULE_TYPES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39787,6 +41364,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_PRESETS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39812,6 +41390,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_SCHEDULES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39837,6 +41416,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_SCHEDULE_TRANSITIONS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39862,6 +41442,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_SCHEDULE_TRANSITION_PER_DAY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39887,6 +41468,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_PRESET_HANDLE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39912,6 +41494,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_SCHEDULE_HANDLE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39946,6 +41529,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.ThermostatClusterPresetStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRESETS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -39980,6 +41564,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.ThermostatClusterScheduleStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SCHEDULES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40005,6 +41590,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRESETS_SCHEDULES_EDITABLE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40030,6 +41616,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TEMPERATURE_SETPOINT_HOLD_POLICY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40055,6 +41642,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SETPOINT_HOLD_EXPIRY_TIMESTAMP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40080,6 +41668,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.ThermostatClusterQueuedPresetStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, QUEUED_PRESET_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40105,6 +41694,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40130,6 +41720,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40155,6 +41746,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40180,6 +41772,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40205,6 +41798,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40230,6 +41824,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40349,6 +41944,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FAN_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40374,6 +41970,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FAN_MODE_SEQUENCE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40408,6 +42005,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PERCENT_SETTING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40433,6 +42031,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PERCENT_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40458,6 +42057,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SPEED_MAX_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40492,6 +42092,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SPEED_SETTING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40517,6 +42118,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SPEED_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40542,6 +42144,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ROCK_SUPPORT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40576,6 +42179,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ROCK_SETTING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40601,6 +42205,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WIND_SUPPORT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40635,6 +42240,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WIND_SETTING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40669,6 +42275,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AIRFLOW_DIRECTION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40694,6 +42301,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40719,6 +42327,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40744,6 +42353,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40769,6 +42379,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40794,6 +42405,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40819,6 +42431,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40893,6 +42506,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TEMPERATURE_DISPLAY_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40927,6 +42541,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, KEYPAD_LOCKOUT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40961,6 +42576,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SCHEDULE_PROGRAMMING_VISIBILITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -40986,6 +42602,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -41011,6 +42628,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -41036,6 +42654,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -41061,6 +42680,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -41086,6 +42706,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -41111,6 +42732,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -41937,6 +43559,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_HUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -41962,6 +43585,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_SATURATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -41987,6 +43611,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REMAINING_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42012,6 +43637,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_X_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42037,6 +43663,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_Y_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42062,6 +43689,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DRIFT_COMPENSATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42087,6 +43715,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COMPENSATION_TEXT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42112,6 +43741,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_TEMPERATURE_MIREDS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42137,6 +43767,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42171,6 +43802,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OPTIONS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42196,6 +43828,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NUMBER_OF_PRIMARIES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42221,6 +43854,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY1_X_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42246,6 +43880,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY1_Y_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42271,6 +43906,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY1_INTENSITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42296,6 +43932,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY2_X_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42321,6 +43958,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY2_Y_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42346,6 +43984,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY2_INTENSITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42371,6 +44010,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY3_X_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42396,6 +44036,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY3_Y_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42421,6 +44062,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY3_INTENSITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42446,6 +44088,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY4_X_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42471,6 +44114,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY4_Y_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42496,6 +44140,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY4_INTENSITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42521,6 +44166,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY5_X_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42546,6 +44192,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY5_Y_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42571,6 +44218,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY5_INTENSITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42596,6 +44244,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY6_X_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42621,6 +44270,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY6_Y_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42646,6 +44296,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRIMARY6_INTENSITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42680,6 +44331,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WHITE_POINT_X_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42714,6 +44366,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WHITE_POINT_Y_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42748,6 +44401,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_POINT_R_X_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42782,6 +44436,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_POINT_R_Y_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42816,6 +44471,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_POINT_R_INTENSITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42850,6 +44506,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_POINT_G_X_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42884,6 +44541,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_POINT_G_Y_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42918,6 +44576,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_POINT_G_INTENSITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42952,6 +44611,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_POINT_B_X_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -42986,6 +44646,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_POINT_B_Y_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43020,6 +44681,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_POINT_B_INTENSITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43045,6 +44707,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ENHANCED_CURRENT_HUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43070,6 +44733,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ENHANCED_COLOR_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43095,6 +44759,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_LOOP_ACTIVE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43120,6 +44785,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_LOOP_DIRECTION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43145,6 +44811,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_LOOP_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43170,6 +44837,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_LOOP_START_ENHANCED_HUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43195,6 +44863,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_LOOP_STORED_ENHANCED_HUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43220,6 +44889,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_CAPABILITIES_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43245,6 +44915,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_TEMP_PHYSICAL_MIN_MIREDS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43270,6 +44941,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COLOR_TEMP_PHYSICAL_MAX_MIREDS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43295,6 +44967,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, COUPLE_COLOR_TEMP_TO_LEVEL_MIN_MIREDS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43329,6 +45002,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, START_UP_COLOR_TEMPERATURE_MIREDS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43354,6 +45028,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43379,6 +45054,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43404,6 +45080,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43429,6 +45106,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43454,6 +45132,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43479,6 +45158,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43575,6 +45255,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PHYSICAL_MIN_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43600,6 +45281,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PHYSICAL_MAX_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43625,6 +45307,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BALLAST_STATUS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43659,6 +45342,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43693,6 +45377,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_LEVEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43727,6 +45412,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INTRINSIC_BALLAST_FACTOR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43761,6 +45447,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BALLAST_FACTOR_ADJUSTMENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43786,6 +45473,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LAMP_QUANTITY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43820,6 +45508,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LAMP_TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43854,6 +45543,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LAMP_MANUFACTURER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43888,6 +45578,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LAMP_RATED_HOURS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43922,6 +45613,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LAMP_BURN_HOURS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43956,6 +45648,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LAMP_ALARM_MODE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -43990,6 +45683,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LAMP_BURN_HOURS_TRIP_POINT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44015,6 +45709,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44040,6 +45735,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44065,6 +45761,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44090,6 +45787,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44115,6 +45813,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44140,6 +45839,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44223,6 +45923,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44248,6 +45949,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44273,6 +45975,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44298,6 +46001,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TOLERANCE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44323,6 +46027,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LIGHT_SENSOR_TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44348,6 +46053,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44373,6 +46079,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44398,6 +46105,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44423,6 +46131,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44448,6 +46157,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44473,6 +46183,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44551,6 +46262,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44576,6 +46288,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44601,6 +46314,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44626,6 +46340,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TOLERANCE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44651,6 +46366,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44676,6 +46392,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44701,6 +46418,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44726,6 +46444,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44751,6 +46470,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44776,6 +46496,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44871,6 +46592,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44896,6 +46618,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44921,6 +46644,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44946,6 +46670,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TOLERANCE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44971,6 +46696,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SCALED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -44996,6 +46722,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_SCALED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45021,6 +46748,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_SCALED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45046,6 +46774,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SCALED_TOLERANCE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45071,6 +46800,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SCALE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45096,6 +46826,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45121,6 +46852,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45146,6 +46878,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45171,6 +46904,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45196,6 +46930,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45221,6 +46956,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45299,6 +47035,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45324,6 +47061,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45349,6 +47087,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45374,6 +47113,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TOLERANCE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45399,6 +47139,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45424,6 +47165,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45449,6 +47191,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45474,6 +47217,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45499,6 +47243,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45524,6 +47269,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45602,6 +47348,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45627,6 +47374,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45652,6 +47400,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45677,6 +47426,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TOLERANCE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45702,6 +47452,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45727,6 +47478,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45752,6 +47504,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45777,6 +47530,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45802,6 +47556,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45827,6 +47582,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45901,6 +47657,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OCCUPANCY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45926,6 +47683,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OCCUPANCY_SENSOR_TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45951,6 +47709,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OCCUPANCY_SENSOR_TYPE_BITMAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -45985,6 +47744,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, P_I_R_OCCUPIED_TO_UNOCCUPIED_DELAY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46019,6 +47779,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, P_I_R_UNOCCUPIED_TO_OCCUPIED_DELAY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46053,6 +47814,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, P_I_R_UNOCCUPIED_TO_OCCUPIED_THRESHOLD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46087,6 +47849,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ULTRASONIC_OCCUPIED_TO_UNOCCUPIED_DELAY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46121,6 +47884,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ULTRASONIC_UNOCCUPIED_TO_OCCUPIED_DELAY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46155,6 +47919,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ULTRASONIC_UNOCCUPIED_TO_OCCUPIED_THRESHOLD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46189,6 +47954,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PHYSICAL_CONTACT_OCCUPIED_TO_UNOCCUPIED_DELAY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46223,6 +47989,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PHYSICAL_CONTACT_UNOCCUPIED_TO_OCCUPIED_DELAY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46257,6 +48024,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PHYSICAL_CONTACT_UNOCCUPIED_TO_OCCUPIED_THRESHOLD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46282,6 +48050,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46307,6 +48076,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46332,6 +48102,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46357,6 +48128,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46382,6 +48154,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46407,6 +48180,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46500,6 +48274,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46525,6 +48300,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46550,6 +48326,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46575,6 +48352,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46600,6 +48378,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46625,6 +48404,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46650,6 +48430,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46675,6 +48456,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNCERTAINTY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46700,6 +48482,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_UNIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46725,6 +48508,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_MEDIUM_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46750,6 +48534,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LEVEL_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46775,6 +48560,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46800,6 +48586,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46825,6 +48612,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46850,6 +48638,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46875,6 +48664,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46900,6 +48690,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -46993,6 +48784,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47018,6 +48810,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47043,6 +48836,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47068,6 +48862,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47093,6 +48888,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47118,6 +48914,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47143,6 +48940,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47168,6 +48966,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNCERTAINTY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47193,6 +48992,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_UNIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47218,6 +49018,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_MEDIUM_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47243,6 +49044,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LEVEL_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47268,6 +49070,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47293,6 +49096,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47318,6 +49122,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47343,6 +49148,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47368,6 +49174,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47393,6 +49200,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47486,6 +49294,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47511,6 +49320,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47536,6 +49346,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47561,6 +49372,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47586,6 +49398,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47611,6 +49424,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47636,6 +49450,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47661,6 +49476,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNCERTAINTY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47686,6 +49502,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_UNIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47711,6 +49528,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_MEDIUM_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47736,6 +49554,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LEVEL_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47761,6 +49580,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47786,6 +49606,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47811,6 +49632,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47836,6 +49658,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47861,6 +49684,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47886,6 +49710,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -47979,6 +49804,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48004,6 +49830,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48029,6 +49856,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48054,6 +49882,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48079,6 +49908,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48104,6 +49934,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48129,6 +49960,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48154,6 +49986,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNCERTAINTY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48179,6 +50012,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_UNIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48204,6 +50038,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_MEDIUM_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48229,6 +50064,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LEVEL_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48254,6 +50090,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48279,6 +50116,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48304,6 +50142,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48329,6 +50168,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48354,6 +50194,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48379,6 +50220,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48472,6 +50314,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48497,6 +50340,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48522,6 +50366,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48547,6 +50392,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48572,6 +50418,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48597,6 +50444,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48622,6 +50470,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48647,6 +50496,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNCERTAINTY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48672,6 +50522,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_UNIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48697,6 +50548,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_MEDIUM_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48722,6 +50574,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LEVEL_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48747,6 +50600,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48772,6 +50626,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48797,6 +50652,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48822,6 +50678,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48847,6 +50704,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48872,6 +50730,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48965,6 +50824,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -48990,6 +50850,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49015,6 +50876,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49040,6 +50902,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49065,6 +50928,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49090,6 +50954,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49115,6 +50980,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49140,6 +51006,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNCERTAINTY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49165,6 +51032,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_UNIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49190,6 +51058,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_MEDIUM_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49215,6 +51084,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LEVEL_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49240,6 +51110,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49265,6 +51136,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49290,6 +51162,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49315,6 +51188,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49340,6 +51214,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49365,6 +51240,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49458,6 +51334,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49483,6 +51360,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49508,6 +51386,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49533,6 +51412,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49558,6 +51438,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49583,6 +51464,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49608,6 +51490,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49633,6 +51516,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNCERTAINTY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49658,6 +51542,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_UNIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49683,6 +51568,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_MEDIUM_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49708,6 +51594,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LEVEL_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49733,6 +51620,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49758,6 +51646,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49783,6 +51672,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49808,6 +51698,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49833,6 +51724,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49858,6 +51750,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49951,6 +51844,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -49976,6 +51870,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50001,6 +51896,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50026,6 +51922,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50051,6 +51948,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50076,6 +51974,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50101,6 +52000,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50126,6 +52026,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNCERTAINTY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50151,6 +52052,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_UNIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50176,6 +52078,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_MEDIUM_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50201,6 +52104,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LEVEL_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50226,6 +52130,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50251,6 +52156,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50276,6 +52182,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50301,6 +52208,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50326,6 +52234,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50351,6 +52260,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50444,6 +52354,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50469,6 +52380,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50494,6 +52406,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50519,6 +52432,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50544,6 +52458,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50569,6 +52484,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50594,6 +52510,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50619,6 +52536,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNCERTAINTY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50644,6 +52562,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_UNIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50669,6 +52588,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_MEDIUM_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50694,6 +52614,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LEVEL_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50719,6 +52640,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50744,6 +52666,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50769,6 +52692,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50794,6 +52718,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50819,6 +52744,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50844,6 +52770,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50937,6 +52864,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50962,6 +52890,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MIN_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -50987,6 +52916,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MAX_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51012,6 +52942,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51037,6 +52968,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PEAK_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51062,6 +52994,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51087,6 +53020,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_MEASURED_VALUE_WINDOW_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51112,6 +53046,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNCERTAINTY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51137,6 +53072,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_UNIT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51162,6 +53098,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_MEDIUM_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51187,6 +53124,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LEVEL_VALUE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51212,6 +53150,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51237,6 +53176,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51262,6 +53202,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51287,6 +53228,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51312,6 +53254,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51337,6 +53280,1049 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+  }
+
+  public static class WiFiNetworkManagementCluster extends BaseChipCluster {
+    public static final long CLUSTER_ID = 1105L;
+
+    private static final long SSID_ATTRIBUTE_ID = 1L;
+    private static final long GENERATED_COMMAND_LIST_ATTRIBUTE_ID = 65528L;
+    private static final long ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID = 65529L;
+    private static final long EVENT_LIST_ATTRIBUTE_ID = 65530L;
+    private static final long ATTRIBUTE_LIST_ATTRIBUTE_ID = 65531L;
+    private static final long FEATURE_MAP_ATTRIBUTE_ID = 65532L;
+    private static final long CLUSTER_REVISION_ATTRIBUTE_ID = 65533L;
+
+    public WiFiNetworkManagementCluster(long devicePtr, int endpointId) {
+      super(devicePtr, endpointId, CLUSTER_ID);
+    }
+
+    @Override
+    @Deprecated
+    public long initWithDevice(long devicePtr, int endpointId) {
+      return 0L;
+    }
+
+    public void networkPassphraseRequest(NetworkPassphraseResponseCallback callback) {
+      networkPassphraseRequest(callback, 0);
+    }
+
+    public void networkPassphraseRequest(NetworkPassphraseResponseCallback callback, int timedInvokeTimeoutMs) {
+      final long commandId = 0L;
+
+      ArrayList<StructElement> elements = new ArrayList<>();
+      StructType commandArgs = new StructType(elements);
+      invoke(new InvokeCallbackImpl(callback) {
+          @Override
+          public void onResponse(StructType invokeStructValue) {
+          final long passphraseFieldID = 0L;
+          byte[] passphrase = null;
+          for (StructElement element: invokeStructValue.value()) {
+            if (element.contextTagNum() == passphraseFieldID) {
+              if (element.value(BaseTLVType.class).type() == TLVType.ByteArray) {
+                ByteArrayType castingValue = element.value(ByteArrayType.class);
+                passphrase = castingValue.value(byte[].class);
+              }
+            }
+          }
+          callback.onSuccess(passphrase);
+        }}, commandId, commandArgs, timedInvokeTimeoutMs);
+    }
+
+    public interface NetworkPassphraseResponseCallback extends BaseClusterCallback {
+      void onSuccess(byte[] passphrase);
+    }
+
+    public interface SsidAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(@Nullable byte[] value);
+    }
+
+    public interface GeneratedCommandListAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<Long> value);
+    }
+
+    public interface AcceptedCommandListAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<Long> value);
+    }
+
+    public interface EventListAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<Long> value);
+    }
+
+    public interface AttributeListAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<Long> value);
+    }
+
+    public void readSsidAttribute(
+        SsidAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, SSID_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            @Nullable byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, SSID_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeSsidAttribute(
+        SsidAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, SSID_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            @Nullable byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, SSID_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readGeneratedCommandListAttribute(
+        GeneratedCommandListAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, GENERATED_COMMAND_LIST_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeGeneratedCommandListAttribute(
+        GeneratedCommandListAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, GENERATED_COMMAND_LIST_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readAcceptedCommandListAttribute(
+        AcceptedCommandListAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeAcceptedCommandListAttribute(
+        AcceptedCommandListAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readEventListAttribute(
+        EventListAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, EVENT_LIST_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, EVENT_LIST_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeEventListAttribute(
+        EventListAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, EVENT_LIST_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readAttributeListAttribute(
+        AttributeListAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ATTRIBUTE_LIST_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ATTRIBUTE_LIST_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeAttributeListAttribute(
+        AttributeListAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ATTRIBUTE_LIST_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readFeatureMapAttribute(
+        LongAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, FEATURE_MAP_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, FEATURE_MAP_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeFeatureMapAttribute(
+        LongAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, FEATURE_MAP_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readClusterRevisionAttribute(
+        IntegerAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, CLUSTER_REVISION_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, CLUSTER_REVISION_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeClusterRevisionAttribute(
+        IntegerAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, CLUSTER_REVISION_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+  }
+
+  public static class ThreadBorderRouterManagementCluster extends BaseChipCluster {
+    public static final long CLUSTER_ID = 1106L;
+
+    private static final long BORDER_ROUTER_NAME_ATTRIBUTE_ID = 0L;
+    private static final long BORDER_AGENT_I_D_ATTRIBUTE_ID = 1L;
+    private static final long THREAD_VERSION_ATTRIBUTE_ID = 2L;
+    private static final long INTERFACE_ENABLED_ATTRIBUTE_ID = 3L;
+    private static final long ACTIVE_DATASET_TIMESTAMP_ATTRIBUTE_ID = 5L;
+    private static final long GENERATED_COMMAND_LIST_ATTRIBUTE_ID = 65528L;
+    private static final long ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID = 65529L;
+    private static final long EVENT_LIST_ATTRIBUTE_ID = 65530L;
+    private static final long ATTRIBUTE_LIST_ATTRIBUTE_ID = 65531L;
+    private static final long FEATURE_MAP_ATTRIBUTE_ID = 65532L;
+    private static final long CLUSTER_REVISION_ATTRIBUTE_ID = 65533L;
+
+    public ThreadBorderRouterManagementCluster(long devicePtr, int endpointId) {
+      super(devicePtr, endpointId, CLUSTER_ID);
+    }
+
+    @Override
+    @Deprecated
+    public long initWithDevice(long devicePtr, int endpointId) {
+      return 0L;
+    }
+
+    public void getActiveDatasetRequest(DatasetResponseCallback callback) {
+      getActiveDatasetRequest(callback, 0);
+    }
+
+    public void getActiveDatasetRequest(DatasetResponseCallback callback, int timedInvokeTimeoutMs) {
+      final long commandId = 0L;
+
+      ArrayList<StructElement> elements = new ArrayList<>();
+      StructType commandArgs = new StructType(elements);
+      invoke(new InvokeCallbackImpl(callback) {
+          @Override
+          public void onResponse(StructType invokeStructValue) {
+          final long datasetFieldID = 0L;
+          byte[] dataset = null;
+          for (StructElement element: invokeStructValue.value()) {
+            if (element.contextTagNum() == datasetFieldID) {
+              if (element.value(BaseTLVType.class).type() == TLVType.ByteArray) {
+                ByteArrayType castingValue = element.value(ByteArrayType.class);
+                dataset = castingValue.value(byte[].class);
+              }
+            }
+          }
+          callback.onSuccess(dataset);
+        }}, commandId, commandArgs, timedInvokeTimeoutMs);
+    }
+
+    public void getPendingDatasetRequest(DatasetResponseCallback callback) {
+      getPendingDatasetRequest(callback, 0);
+    }
+
+    public void getPendingDatasetRequest(DatasetResponseCallback callback, int timedInvokeTimeoutMs) {
+      final long commandId = 1L;
+
+      ArrayList<StructElement> elements = new ArrayList<>();
+      StructType commandArgs = new StructType(elements);
+      invoke(new InvokeCallbackImpl(callback) {
+          @Override
+          public void onResponse(StructType invokeStructValue) {
+          final long datasetFieldID = 0L;
+          byte[] dataset = null;
+          for (StructElement element: invokeStructValue.value()) {
+            if (element.contextTagNum() == datasetFieldID) {
+              if (element.value(BaseTLVType.class).type() == TLVType.ByteArray) {
+                ByteArrayType castingValue = element.value(ByteArrayType.class);
+                dataset = castingValue.value(byte[].class);
+              }
+            }
+          }
+          callback.onSuccess(dataset);
+        }}, commandId, commandArgs, timedInvokeTimeoutMs);
+    }
+
+    public void setActiveDatasetRequest(DefaultClusterCallback callback, byte[] activeDataset, Optional<Long> breadcrumb) {
+      setActiveDatasetRequest(callback, activeDataset, breadcrumb, 0);
+    }
+
+    public void setActiveDatasetRequest(DefaultClusterCallback callback, byte[] activeDataset, Optional<Long> breadcrumb, int timedInvokeTimeoutMs) {
+      final long commandId = 4L;
+
+      ArrayList<StructElement> elements = new ArrayList<>();
+      final long activeDatasetFieldID = 0L;
+      BaseTLVType activeDatasettlvValue = new ByteArrayType(activeDataset);
+      elements.add(new StructElement(activeDatasetFieldID, activeDatasettlvValue));
+
+      final long breadcrumbFieldID = 1L;
+      BaseTLVType breadcrumbtlvValue = breadcrumb.<BaseTLVType>map((nonOptionalbreadcrumb) -> new UIntType(nonOptionalbreadcrumb)).orElse(new EmptyType());
+      elements.add(new StructElement(breadcrumbFieldID, breadcrumbtlvValue));
+
+      StructType commandArgs = new StructType(elements);
+      invoke(new InvokeCallbackImpl(callback) {
+          @Override
+          public void onResponse(StructType invokeStructValue) {
+          callback.onSuccess();
+        }}, commandId, commandArgs, timedInvokeTimeoutMs);
+    }
+
+    public void setPendingDatasetRequest(DefaultClusterCallback callback, byte[] pendingDataset) {
+      setPendingDatasetRequest(callback, pendingDataset, 0);
+    }
+
+    public void setPendingDatasetRequest(DefaultClusterCallback callback, byte[] pendingDataset, int timedInvokeTimeoutMs) {
+      final long commandId = 5L;
+
+      ArrayList<StructElement> elements = new ArrayList<>();
+      final long pendingDatasetFieldID = 0L;
+      BaseTLVType pendingDatasettlvValue = new ByteArrayType(pendingDataset);
+      elements.add(new StructElement(pendingDatasetFieldID, pendingDatasettlvValue));
+
+      StructType commandArgs = new StructType(elements);
+      invoke(new InvokeCallbackImpl(callback) {
+          @Override
+          public void onResponse(StructType invokeStructValue) {
+          callback.onSuccess();
+        }}, commandId, commandArgs, timedInvokeTimeoutMs);
+    }
+
+    public interface DatasetResponseCallback extends BaseClusterCallback {
+      void onSuccess(byte[] dataset);
+    }
+
+    public interface ActiveDatasetTimestampAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(@Nullable Long value);
+    }
+
+    public interface GeneratedCommandListAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<Long> value);
+    }
+
+    public interface AcceptedCommandListAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<Long> value);
+    }
+
+    public interface EventListAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<Long> value);
+    }
+
+    public interface AttributeListAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<Long> value);
+    }
+
+    public void readBorderRouterNameAttribute(
+        CharStringAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, BORDER_ROUTER_NAME_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, BORDER_ROUTER_NAME_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeBorderRouterNameAttribute(
+        CharStringAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, BORDER_ROUTER_NAME_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, BORDER_ROUTER_NAME_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readBorderAgentIDAttribute(
+        OctetStringAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, BORDER_AGENT_I_D_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, BORDER_AGENT_I_D_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeBorderAgentIDAttribute(
+        OctetStringAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, BORDER_AGENT_I_D_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, BORDER_AGENT_I_D_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readThreadVersionAttribute(
+        IntegerAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, THREAD_VERSION_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, THREAD_VERSION_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeThreadVersionAttribute(
+        IntegerAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, THREAD_VERSION_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, THREAD_VERSION_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readInterfaceEnabledAttribute(
+        BooleanAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, INTERFACE_ENABLED_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, INTERFACE_ENABLED_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeInterfaceEnabledAttribute(
+        BooleanAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, INTERFACE_ENABLED_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, INTERFACE_ENABLED_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readActiveDatasetTimestampAttribute(
+        ActiveDatasetTimestampAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ACTIVE_DATASET_TIMESTAMP_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ACTIVE_DATASET_TIMESTAMP_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeActiveDatasetTimestampAttribute(
+        ActiveDatasetTimestampAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ACTIVE_DATASET_TIMESTAMP_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ACTIVE_DATASET_TIMESTAMP_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readGeneratedCommandListAttribute(
+        GeneratedCommandListAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, GENERATED_COMMAND_LIST_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeGeneratedCommandListAttribute(
+        GeneratedCommandListAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, GENERATED_COMMAND_LIST_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readAcceptedCommandListAttribute(
+        AcceptedCommandListAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeAcceptedCommandListAttribute(
+        AcceptedCommandListAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readEventListAttribute(
+        EventListAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, EVENT_LIST_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, EVENT_LIST_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeEventListAttribute(
+        EventListAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, EVENT_LIST_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readAttributeListAttribute(
+        AttributeListAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ATTRIBUTE_LIST_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ATTRIBUTE_LIST_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeAttributeListAttribute(
+        AttributeListAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ATTRIBUTE_LIST_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readFeatureMapAttribute(
+        LongAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, FEATURE_MAP_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, FEATURE_MAP_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeFeatureMapAttribute(
+        LongAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, FEATURE_MAP_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readClusterRevisionAttribute(
+        IntegerAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, CLUSTER_REVISION_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, CLUSTER_REVISION_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeClusterRevisionAttribute(
+        IntegerAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, CLUSTER_REVISION_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+  }
+
+  public static class ThreadNetworkDirectoryCluster extends BaseChipCluster {
+    public static final long CLUSTER_ID = 1107L;
+
+    private static final long PREFERRED_EXTENDED_PAN_I_D_ATTRIBUTE_ID = 0L;
+    private static final long THREAD_NETWORKS_ATTRIBUTE_ID = 1L;
+    private static final long THREAD_NETWORK_TABLE_SIZE_ATTRIBUTE_ID = 2L;
+    private static final long GENERATED_COMMAND_LIST_ATTRIBUTE_ID = 65528L;
+    private static final long ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID = 65529L;
+    private static final long EVENT_LIST_ATTRIBUTE_ID = 65530L;
+    private static final long ATTRIBUTE_LIST_ATTRIBUTE_ID = 65531L;
+    private static final long FEATURE_MAP_ATTRIBUTE_ID = 65532L;
+    private static final long CLUSTER_REVISION_ATTRIBUTE_ID = 65533L;
+
+    public ThreadNetworkDirectoryCluster(long devicePtr, int endpointId) {
+      super(devicePtr, endpointId, CLUSTER_ID);
+    }
+
+    @Override
+    @Deprecated
+    public long initWithDevice(long devicePtr, int endpointId) {
+      return 0L;
+    }
+
+
+    public void addNetwork(DefaultClusterCallback callback, byte[] operationalDataset, int timedInvokeTimeoutMs) {
+      final long commandId = 0L;
+
+      ArrayList<StructElement> elements = new ArrayList<>();
+      final long operationalDatasetFieldID = 0L;
+      BaseTLVType operationalDatasettlvValue = new ByteArrayType(operationalDataset);
+      elements.add(new StructElement(operationalDatasetFieldID, operationalDatasettlvValue));
+
+      StructType commandArgs = new StructType(elements);
+      invoke(new InvokeCallbackImpl(callback) {
+          @Override
+          public void onResponse(StructType invokeStructValue) {
+          callback.onSuccess();
+        }}, commandId, commandArgs, timedInvokeTimeoutMs);
+    }
+
+
+    public void removeNetwork(DefaultClusterCallback callback, Long extendedPanID, int timedInvokeTimeoutMs) {
+      final long commandId = 1L;
+
+      ArrayList<StructElement> elements = new ArrayList<>();
+      final long extendedPanIDFieldID = 0L;
+      BaseTLVType extendedPanIDtlvValue = new UIntType(extendedPanID);
+      elements.add(new StructElement(extendedPanIDFieldID, extendedPanIDtlvValue));
+
+      StructType commandArgs = new StructType(elements);
+      invoke(new InvokeCallbackImpl(callback) {
+          @Override
+          public void onResponse(StructType invokeStructValue) {
+          callback.onSuccess();
+        }}, commandId, commandArgs, timedInvokeTimeoutMs);
+    }
+
+
+    public void getOperationalDataset(OperationalDatasetResponseCallback callback, Long extendedPanID, int timedInvokeTimeoutMs) {
+      final long commandId = 2L;
+
+      ArrayList<StructElement> elements = new ArrayList<>();
+      final long extendedPanIDFieldID = 0L;
+      BaseTLVType extendedPanIDtlvValue = new UIntType(extendedPanID);
+      elements.add(new StructElement(extendedPanIDFieldID, extendedPanIDtlvValue));
+
+      StructType commandArgs = new StructType(elements);
+      invoke(new InvokeCallbackImpl(callback) {
+          @Override
+          public void onResponse(StructType invokeStructValue) {
+          final long operationalDatasetFieldID = 0L;
+          byte[] operationalDataset = null;
+          for (StructElement element: invokeStructValue.value()) {
+            if (element.contextTagNum() == operationalDatasetFieldID) {
+              if (element.value(BaseTLVType.class).type() == TLVType.ByteArray) {
+                ByteArrayType castingValue = element.value(ByteArrayType.class);
+                operationalDataset = castingValue.value(byte[].class);
+              }
+            }
+          }
+          callback.onSuccess(operationalDataset);
+        }}, commandId, commandArgs, timedInvokeTimeoutMs);
+    }
+
+    public interface OperationalDatasetResponseCallback extends BaseClusterCallback {
+      void onSuccess(byte[] operationalDataset);
+    }
+
+    public interface PreferredExtendedPanIDAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(@Nullable Long value);
+    }
+
+    public interface ThreadNetworksAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<ChipStructs.ThreadNetworkDirectoryClusterThreadNetworkStruct> value);
+    }
+
+    public interface GeneratedCommandListAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<Long> value);
+    }
+
+    public interface AcceptedCommandListAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<Long> value);
+    }
+
+    public interface EventListAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<Long> value);
+    }
+
+    public interface AttributeListAttributeCallback extends BaseAttributeCallback {
+      void onSuccess(List<Long> value);
+    }
+
+    public void readPreferredExtendedPanIDAttribute(
+        PreferredExtendedPanIDAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, PREFERRED_EXTENDED_PAN_I_D_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, PREFERRED_EXTENDED_PAN_I_D_ATTRIBUTE_ID, true);
+    }
+
+    public void writePreferredExtendedPanIDAttribute(DefaultClusterCallback callback, Long value) {
+      writePreferredExtendedPanIDAttribute(callback, value, 0);
+    }
+
+    public void writePreferredExtendedPanIDAttribute(DefaultClusterCallback callback, Long value, int timedWriteTimeoutMs) {
+      BaseTLVType tlvValue = value != null ? new UIntType(value) : new NullType();
+      writeAttribute(new WriteAttributesCallbackImpl(callback), PREFERRED_EXTENDED_PAN_I_D_ATTRIBUTE_ID, tlvValue, timedWriteTimeoutMs);
+    }
+
+    public void subscribePreferredExtendedPanIDAttribute(
+        PreferredExtendedPanIDAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, PREFERRED_EXTENDED_PAN_I_D_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, PREFERRED_EXTENDED_PAN_I_D_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readThreadNetworksAttribute(
+        ThreadNetworksAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, THREAD_NETWORKS_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<ChipStructs.ThreadNetworkDirectoryClusterThreadNetworkStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, THREAD_NETWORKS_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeThreadNetworksAttribute(
+        ThreadNetworksAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, THREAD_NETWORKS_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<ChipStructs.ThreadNetworkDirectoryClusterThreadNetworkStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, THREAD_NETWORKS_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readThreadNetworkTableSizeAttribute(
+        IntegerAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, THREAD_NETWORK_TABLE_SIZE_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, THREAD_NETWORK_TABLE_SIZE_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeThreadNetworkTableSizeAttribute(
+        IntegerAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, THREAD_NETWORK_TABLE_SIZE_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, THREAD_NETWORK_TABLE_SIZE_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readGeneratedCommandListAttribute(
+        GeneratedCommandListAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, GENERATED_COMMAND_LIST_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeGeneratedCommandListAttribute(
+        GeneratedCommandListAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, GENERATED_COMMAND_LIST_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readAcceptedCommandListAttribute(
+        AcceptedCommandListAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeAcceptedCommandListAttribute(
+        AcceptedCommandListAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readEventListAttribute(
+        EventListAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, EVENT_LIST_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, EVENT_LIST_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeEventListAttribute(
+        EventListAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, EVENT_LIST_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readAttributeListAttribute(
+        AttributeListAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ATTRIBUTE_LIST_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ATTRIBUTE_LIST_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeAttributeListAttribute(
+        AttributeListAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, ATTRIBUTE_LIST_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readFeatureMapAttribute(
+        LongAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, FEATURE_MAP_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, FEATURE_MAP_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeFeatureMapAttribute(
+        LongAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, FEATURE_MAP_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
+    }
+
+    public void readClusterRevisionAttribute(
+        IntegerAttributeCallback callback) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, CLUSTER_REVISION_ATTRIBUTE_ID);
+
+      readAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
+          }
+        }, CLUSTER_REVISION_ATTRIBUTE_ID, true);
+    }
+
+    public void subscribeClusterRevisionAttribute(
+        IntegerAttributeCallback callback, int minInterval, int maxInterval) {
+      ChipAttributePath path = ChipAttributePath.newInstance(endpointId, clusterId, CLUSTER_REVISION_ATTRIBUTE_ID);
+
+      subscribeAttribute(new ReportCallbackImpl(callback, path) {
+          @Override
+          public void onSuccess(byte[] tlv) {
+            Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51401,6 +54387,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, M_A_C_ADDRESS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51426,6 +54413,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LINK_LOCAL_ADDRESS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51451,6 +54439,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51476,6 +54465,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51501,6 +54491,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51526,6 +54517,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51551,6 +54543,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51576,6 +54569,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51867,6 +54861,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.ChannelClusterChannelInfoStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CHANNEL_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51892,6 +54887,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.ChannelClusterLineupInfoStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LINEUP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51917,6 +54913,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.ChannelClusterChannelInfoStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_CHANNEL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51942,6 +54939,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51967,6 +54965,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -51992,6 +54991,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -52017,6 +55017,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -52042,6 +55043,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -52067,6 +55069,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -52180,6 +55183,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.TargetNavigatorClusterTargetInfoStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TARGET_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -52205,6 +55209,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_TARGET_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -52230,6 +55235,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -52255,6 +55261,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -52280,6 +55287,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -52305,6 +55313,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -52330,6 +55339,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -52355,6 +55365,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -52911,6 +55922,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_STATE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -52936,6 +55948,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, START_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -52961,6 +55974,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DURATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -52986,6 +56000,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.MediaPlaybackClusterPlaybackPositionStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SAMPLED_POSITION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53011,6 +56026,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PLAYBACK_SPEED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53036,6 +56052,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SEEK_RANGE_END_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53061,6 +56078,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SEEK_RANGE_START_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53086,6 +56104,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.MediaPlaybackClusterTrackStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_AUDIO_TRACK_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53111,6 +56130,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable List<ChipStructs.MediaPlaybackClusterTrackStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVAILABLE_AUDIO_TRACKS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53136,6 +56156,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.MediaPlaybackClusterTrackStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_TEXT_TRACK_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53161,6 +56182,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable List<ChipStructs.MediaPlaybackClusterTrackStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVAILABLE_TEXT_TRACKS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53186,6 +56208,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53211,6 +56234,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53236,6 +56260,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53261,6 +56286,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53286,6 +56312,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53311,6 +56338,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53455,6 +56483,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.MediaInputClusterInputInfoStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INPUT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53480,6 +56509,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_INPUT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53505,6 +56535,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53530,6 +56561,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53555,6 +56587,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53580,6 +56613,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53605,6 +56639,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53630,6 +56665,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53708,6 +56744,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53733,6 +56770,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53758,6 +56796,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53783,6 +56822,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53808,6 +56848,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53833,6 +56874,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53929,6 +56971,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53954,6 +56997,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -53979,6 +57023,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54004,6 +57049,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54029,6 +57075,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54054,6 +57101,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54224,6 +57272,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<String> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPT_HEADER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54249,6 +57298,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SUPPORTED_STREAMING_PROTOCOLS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54274,6 +57324,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54299,6 +57350,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54324,6 +57376,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54349,6 +57402,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54374,6 +57428,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54399,6 +57454,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54511,6 +57567,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.AudioOutputClusterOutputInfoStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OUTPUT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54536,6 +57593,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_OUTPUT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54561,6 +57619,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54586,6 +57645,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54611,6 +57671,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54636,6 +57697,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54661,6 +57723,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54686,6 +57749,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54877,6 +57941,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CATALOG_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54902,6 +57967,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.ApplicationLauncherClusterApplicationEPStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_APP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54927,6 +57993,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54952,6 +58019,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -54977,6 +58045,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55002,6 +58071,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55027,6 +58097,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55052,6 +58123,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55130,6 +58202,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, VENDOR_NAME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55155,6 +58228,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, VENDOR_I_D_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55180,6 +58254,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, APPLICATION_NAME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55205,6 +58280,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PRODUCT_I_D_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55230,6 +58306,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             ChipStructs.ApplicationBasicClusterApplicationStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, APPLICATION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55255,6 +58332,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, STATUS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55280,6 +58358,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, APPLICATION_VERSION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55305,6 +58384,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ALLOWED_VENDOR_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55330,6 +58410,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55355,6 +58436,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55380,6 +58462,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55405,6 +58488,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55430,6 +58514,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55455,6 +58540,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55590,6 +58676,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55615,6 +58702,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55640,6 +58728,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55665,6 +58754,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55690,6 +58780,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55715,6 +58806,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -55995,6 +59087,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ENABLED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56020,6 +59113,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.ContentControlClusterRatingNameStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ON_DEMAND_RATINGS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56045,6 +59139,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ON_DEMAND_RATING_THRESHOLD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56070,6 +59165,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.ContentControlClusterRatingNameStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SCHEDULED_CONTENT_RATINGS_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56095,6 +59191,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SCHEDULED_CONTENT_RATING_THRESHOLD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56120,6 +59217,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, SCREEN_DAILY_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56145,6 +59243,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REMAINING_SCREEN_TIME_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56170,6 +59269,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BLOCK_UNRATED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56195,6 +59295,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56220,6 +59321,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56245,6 +59347,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56270,6 +59373,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56295,6 +59399,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56320,6 +59425,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56434,6 +59540,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56459,6 +59566,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56484,6 +59592,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56509,6 +59618,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56534,6 +59644,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56559,6 +59670,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56793,6 +59905,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASUREMENT_TYPE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56818,6 +59931,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DC_VOLTAGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56843,6 +59957,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DC_VOLTAGE_MIN_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56868,6 +59983,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DC_VOLTAGE_MAX_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56893,6 +60009,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DC_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56918,6 +60035,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DC_CURRENT_MIN_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56943,6 +60061,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DC_CURRENT_MAX_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56968,6 +60087,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DC_POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -56993,6 +60113,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DC_POWER_MIN_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57018,6 +60139,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DC_POWER_MAX_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57043,6 +60165,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DC_VOLTAGE_MULTIPLIER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57068,6 +60191,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DC_VOLTAGE_DIVISOR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57093,6 +60217,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DC_CURRENT_MULTIPLIER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57118,6 +60243,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DC_CURRENT_DIVISOR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57143,6 +60269,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DC_POWER_MULTIPLIER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57168,6 +60295,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, DC_POWER_DIVISOR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57193,6 +60321,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AC_FREQUENCY_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57218,6 +60347,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AC_FREQUENCY_MIN_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57243,6 +60373,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AC_FREQUENCY_MAX_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57268,6 +60399,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NEUTRAL_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57293,6 +60425,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TOTAL_ACTIVE_POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57318,6 +60451,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TOTAL_REACTIVE_POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57343,6 +60477,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TOTAL_APPARENT_POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57368,6 +60503,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED1ST_HARMONIC_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57393,6 +60529,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED3RD_HARMONIC_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57418,6 +60555,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED5TH_HARMONIC_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57443,6 +60581,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED7TH_HARMONIC_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57468,6 +60607,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED9TH_HARMONIC_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57493,6 +60633,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED11TH_HARMONIC_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57518,6 +60659,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_PHASE1ST_HARMONIC_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57543,6 +60685,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_PHASE3RD_HARMONIC_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57568,6 +60711,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_PHASE5TH_HARMONIC_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57593,6 +60737,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_PHASE7TH_HARMONIC_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57618,6 +60763,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_PHASE9TH_HARMONIC_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57643,6 +60789,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEASURED_PHASE11TH_HARMONIC_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57668,6 +60815,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AC_FREQUENCY_MULTIPLIER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57693,6 +60841,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AC_FREQUENCY_DIVISOR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57718,6 +60867,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, POWER_MULTIPLIER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57743,6 +60893,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, POWER_DIVISOR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57768,6 +60919,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, HARMONIC_CURRENT_MULTIPLIER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57793,6 +60945,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, PHASE_HARMONIC_CURRENT_MULTIPLIER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57818,6 +60971,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INSTANTANEOUS_VOLTAGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57843,6 +60997,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INSTANTANEOUS_LINE_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57868,6 +61023,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INSTANTANEOUS_ACTIVE_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57893,6 +61049,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INSTANTANEOUS_REACTIVE_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57918,6 +61075,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INSTANTANEOUS_POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57943,6 +61101,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57968,6 +61127,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_MIN_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -57993,6 +61153,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_MAX_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58018,6 +61179,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_CURRENT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58043,6 +61205,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_CURRENT_MIN_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58068,6 +61231,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_CURRENT_MAX_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58093,6 +61257,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58118,6 +61283,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_POWER_MIN_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58143,6 +61309,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_POWER_MAX_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58168,6 +61335,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REACTIVE_POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58193,6 +61361,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, APPARENT_POWER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58218,6 +61387,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, POWER_FACTOR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58252,6 +61422,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_RMS_VOLTAGE_MEASUREMENT_PERIOD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58286,6 +61457,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_RMS_UNDER_VOLTAGE_COUNTER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58320,6 +61492,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_EXTREME_OVER_VOLTAGE_PERIOD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58354,6 +61527,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_EXTREME_UNDER_VOLTAGE_PERIOD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58388,6 +61562,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_SAG_PERIOD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58422,6 +61597,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_SWELL_PERIOD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58447,6 +61623,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AC_VOLTAGE_MULTIPLIER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58472,6 +61649,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AC_VOLTAGE_DIVISOR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58497,6 +61675,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AC_CURRENT_MULTIPLIER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58522,6 +61701,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AC_CURRENT_DIVISOR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58547,6 +61727,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AC_POWER_MULTIPLIER_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58572,6 +61753,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AC_POWER_DIVISOR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58606,6 +61788,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OVERLOAD_ALARMS_MASK_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58631,6 +61814,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, VOLTAGE_OVERLOAD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58656,6 +61840,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CURRENT_OVERLOAD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58690,6 +61875,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AC_OVERLOAD_ALARMS_MASK_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58715,6 +61901,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AC_VOLTAGE_OVERLOAD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58740,6 +61927,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AC_CURRENT_OVERLOAD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58765,6 +61953,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AC_ACTIVE_POWER_OVERLOAD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58790,6 +61979,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AC_REACTIVE_POWER_OVERLOAD_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58815,6 +62005,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_RMS_OVER_VOLTAGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58840,6 +62031,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_RMS_UNDER_VOLTAGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58865,6 +62057,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_EXTREME_OVER_VOLTAGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58890,6 +62083,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_EXTREME_UNDER_VOLTAGE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58915,6 +62109,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_SAG_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58940,6 +62135,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_SWELL_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58965,6 +62161,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LINE_CURRENT_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -58990,6 +62187,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_CURRENT_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59015,6 +62213,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REACTIVE_CURRENT_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59040,6 +62239,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59065,6 +62265,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_MIN_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59090,6 +62291,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_MAX_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59115,6 +62317,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_CURRENT_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59140,6 +62343,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_CURRENT_MIN_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59165,6 +62369,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_CURRENT_MAX_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59190,6 +62395,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_POWER_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59215,6 +62421,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_POWER_MIN_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59240,6 +62447,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_POWER_MAX_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59265,6 +62473,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REACTIVE_POWER_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59290,6 +62499,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, APPARENT_POWER_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59315,6 +62525,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, POWER_FACTOR_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59340,6 +62551,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_RMS_VOLTAGE_MEASUREMENT_PERIOD_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59365,6 +62577,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_RMS_OVER_VOLTAGE_COUNTER_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59390,6 +62603,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_RMS_UNDER_VOLTAGE_COUNTER_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59415,6 +62629,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_EXTREME_OVER_VOLTAGE_PERIOD_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59440,6 +62655,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_EXTREME_UNDER_VOLTAGE_PERIOD_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59465,6 +62681,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_SAG_PERIOD_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59490,6 +62707,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_SWELL_PERIOD_PHASE_B_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59515,6 +62733,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LINE_CURRENT_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59540,6 +62759,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_CURRENT_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59565,6 +62785,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REACTIVE_CURRENT_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59590,6 +62811,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59615,6 +62837,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_MIN_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59640,6 +62863,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_MAX_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59665,6 +62889,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_CURRENT_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59690,6 +62915,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_CURRENT_MIN_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59715,6 +62941,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_CURRENT_MAX_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59740,6 +62967,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_POWER_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59765,6 +62993,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_POWER_MIN_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59790,6 +63019,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACTIVE_POWER_MAX_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59815,6 +63045,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, REACTIVE_POWER_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59840,6 +63071,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, APPARENT_POWER_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59865,6 +63097,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, POWER_FACTOR_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59890,6 +63123,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_RMS_VOLTAGE_MEASUREMENT_PERIOD_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59915,6 +63149,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_RMS_OVER_VOLTAGE_COUNTER_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59940,6 +63175,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, AVERAGE_RMS_UNDER_VOLTAGE_COUNTER_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59965,6 +63201,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_EXTREME_OVER_VOLTAGE_PERIOD_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -59990,6 +63227,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_EXTREME_UNDER_VOLTAGE_PERIOD_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -60015,6 +63253,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_SAG_PERIOD_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -60040,6 +63279,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RMS_VOLTAGE_SWELL_PERIOD_PHASE_C_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -60065,6 +63305,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -60090,6 +63331,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -60115,6 +63357,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -60140,6 +63383,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -60165,6 +63409,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -60190,6 +63435,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -61592,6 +64838,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BOOLEAN_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -61626,6 +64873,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BITMAP8_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -61660,6 +64908,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BITMAP16_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -61694,6 +64943,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BITMAP32_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -61728,6 +64978,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, BITMAP64_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -61762,6 +65013,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INT8U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -61796,6 +65048,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INT16U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -61830,6 +65083,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INT24U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -61864,6 +65118,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INT32U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -61898,6 +65153,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INT40U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -61932,6 +65188,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INT48U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -61966,6 +65223,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INT56U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62000,6 +65258,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INT64U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62034,6 +65293,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INT8S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62068,6 +65328,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INT16S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62102,6 +65363,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INT24S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62136,6 +65398,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INT32S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62170,6 +65433,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INT40S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62204,6 +65468,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INT48S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62238,6 +65503,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INT56S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62272,6 +65538,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, INT64S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62306,6 +65573,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ENUM8_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62340,6 +65608,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ENUM16_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62374,6 +65643,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FLOAT_SINGLE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62408,6 +65678,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Double value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FLOAT_DOUBLE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62442,6 +65713,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, OCTET_STRING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62476,6 +65748,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Integer> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LIST_INT8U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62510,6 +65783,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<byte[]> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LIST_OCTET_STRING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62544,6 +65818,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.UnitTestingClusterTestListStructOctet> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LIST_STRUCT_OCTET_STRING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62578,6 +65853,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LONG_OCTET_STRING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62612,6 +65888,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CHAR_STRING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62646,6 +65923,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LONG_CHAR_STRING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62680,6 +65958,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EPOCH_US_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62714,6 +65993,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EPOCH_S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62748,6 +66028,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, VENDOR_ID_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62782,6 +66063,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.UnitTestingClusterNullablesAndOptionalsStruct> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LIST_NULLABLES_AND_OPTIONALS_STRUCT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62816,6 +66098,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ENUM_ATTR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62850,6 +66133,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             ChipStructs.UnitTestingClusterSimpleStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, STRUCT_ATTR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62884,6 +66168,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RANGE_RESTRICTED_INT8U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62918,6 +66203,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RANGE_RESTRICTED_INT8S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62952,6 +66238,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RANGE_RESTRICTED_INT16U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -62986,6 +66273,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, RANGE_RESTRICTED_INT16S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63020,6 +66308,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<byte[]> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LIST_LONG_OCTET_STRING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63059,6 +66348,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<ChipStructs.UnitTestingClusterTestFabricScoped> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, LIST_FABRIC_SCOPED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63089,6 +66379,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, TIMED_WRITE_BOOLEAN_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63123,6 +66414,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERAL_ERROR_BOOLEAN_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63157,6 +66449,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_ERROR_BOOLEAN_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63191,6 +66484,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, UNSUPPORTED_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63225,6 +66519,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_BOOLEAN_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63259,6 +66554,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_BITMAP8_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63293,6 +66589,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_BITMAP16_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63327,6 +66624,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_BITMAP32_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63361,6 +66659,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_BITMAP64_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63395,6 +66694,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_INT8U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63429,6 +66729,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_INT16U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63463,6 +66764,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_INT24U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63497,6 +66799,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_INT32U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63531,6 +66834,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_INT40U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63565,6 +66869,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_INT48U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63599,6 +66904,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_INT56U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63633,6 +66939,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_INT64U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63667,6 +66974,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_INT8S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63701,6 +67009,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_INT16S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63735,6 +67044,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_INT24S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63769,6 +67079,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_INT32S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63803,6 +67114,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_INT40S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63837,6 +67149,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_INT48S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63871,6 +67184,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_INT56S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63905,6 +67219,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_INT64S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63939,6 +67254,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_ENUM8_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -63973,6 +67289,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_ENUM16_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64007,6 +67324,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Float value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_FLOAT_SINGLE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64041,6 +67359,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Double value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_FLOAT_DOUBLE_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64075,6 +67394,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable byte[] value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_OCTET_STRING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64109,6 +67429,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable String value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_CHAR_STRING_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64143,6 +67464,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_ENUM_ATTR_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64177,6 +67499,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable ChipStructs.UnitTestingClusterSimpleStruct value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_STRUCT_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64211,6 +67534,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_RANGE_RESTRICTED_INT8U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64245,6 +67569,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_RANGE_RESTRICTED_INT8S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64279,6 +67604,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_RANGE_RESTRICTED_INT16U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64313,6 +67639,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             @Nullable Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, NULLABLE_RANGE_RESTRICTED_INT16S_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64347,6 +67674,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, WRITE_ONLY_INT8U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64381,6 +67709,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, MEI_INT8U_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64406,6 +67735,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64431,6 +67761,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64456,6 +67787,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64481,6 +67813,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64506,6 +67839,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64531,6 +67865,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64657,6 +67992,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64682,6 +68018,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64707,6 +68044,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64732,6 +68070,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64757,6 +68096,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64782,6 +68122,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64908,6 +68249,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Boolean value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FLIP_FLOP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64933,6 +68275,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, GENERATED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64958,6 +68301,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ACCEPTED_COMMAND_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -64983,6 +68327,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, EVENT_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -65008,6 +68353,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             List<Long> value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, ATTRIBUTE_LIST_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -65033,6 +68379,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Long value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, FEATURE_MAP_ATTRIBUTE_ID, minInterval, maxInterval);
     }
@@ -65058,6 +68405,7 @@ public class ChipClusters {
           @Override
           public void onSuccess(byte[] tlv) {
             Integer value = ChipTLVValueDecoder.decodeAttributeValue(path, tlv);
+            callback.onSuccess(value);
           }
         }, CLUSTER_REVISION_ATTRIBUTE_ID, minInterval, maxInterval);
     }

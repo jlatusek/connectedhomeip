@@ -118,6 +118,7 @@ source_set("global-attributes") {
   # as a dependency
   public_deps = [
     ":app_config",
+    "${chip_root}/src/app/common:ids",
     "${chip_root}/src/lib/support",
   ]
 }
@@ -144,6 +145,10 @@ source_set("constants") {
     "${chip_root}/src/lib/core",
     "${chip_root}/src/system",
   ]
+}
+
+source_set("test-event-trigger") {
+  sources = [ "TestEventTriggerDelegate.h" ]
 }
 
 # interaction-model is a static-library because it currently requires global functions (app/util/...) that are stubbed in different test files that depend on the app static_library
@@ -174,9 +179,6 @@ static_library("interaction-model") {
     "ReadClient.h",  # TODO: cpp is only included conditionally. Needs logic
                      # fixing
     "ReadPrepareParams.h",
-    "RequiredPrivilege.h",
-    "StatusResponse.cpp",
-    "StatusResponse.h",
     "SubscriptionResumptionStorage.h",
     "TimedHandler.cpp",
     "TimedHandler.h",
@@ -205,6 +207,7 @@ static_library("interaction-model") {
 
   public_deps = [
     ":app_config",
+    ":command-handler",
     ":constants",
     ":paths",
     ":subscription-info-provider",
@@ -243,13 +246,12 @@ static_library("interaction-model") {
       "dynamic_server/AccessControl.cpp",
       "dynamic_server/AccessControl.h",
       "dynamic_server/DynamicDispatcher.cpp",
-      "util/privilege-storage.cpp",
-      "util/privilege-storage.h",
     ]
 
     public_deps += [
       ":global-attributes",
       "${chip_root}/src/access",
+      "${chip_root}/src/app/dynamic_server:mock-codegen-includes",
     ]
 
     public_configs += [ ":config-controller-dynamic-server" ]
@@ -259,12 +261,97 @@ static_library("interaction-model") {
 source_set("events") {
   sources = [
     "EventHeader.h",
+    "EventLoggingDelegate.h",
     "EventLoggingTypes.h",
   ]
 
   deps = [
     ":paths",
     "${chip_root}/src/access:types",
+    "${chip_root}/src/lib/core",
+  ]
+}
+
+static_library("attribute-access") {
+  sources = [
+    "AttributeAccessInterface.h",
+    "AttributeAccessInterfaceCache.h",
+    "AttributeAccessInterfaceRegistry.cpp",
+    "AttributeAccessInterfaceRegistry.h",
+    "AttributeEncodeState.h",
+    "AttributeReportBuilder.cpp",
+    "AttributeReportBuilder.h",
+    "AttributeValueDecoder.h",
+    "AttributeValueEncoder.cpp",
+    "AttributeValueEncoder.h",
+  ]
+
+  deps = [
+    ":paths",
+    "${chip_root}/src/access:types",
+    "${chip_root}/src/app/MessageDef",
+    "${chip_root}/src/app/data-model",
+    "${chip_root}/src/app/util:af-types",
+    "${chip_root}/src/lib/core",
+    "${chip_root}/src/lib/support",
+  ]
+}
+
+source_set("required-privileges") {
+  sources = [ "RequiredPrivilege.h" ]
+
+  public_deps = [
+    ":paths",
+    "${chip_root}/src/access:types",
+  ]
+
+  if (chip_build_controller_dynamic_server) {
+    sources += [
+      "util/privilege-storage.cpp",
+      "util/privilege-storage.h",
+    ]
+
+    public_deps += [
+      ":global-attributes",
+      "${chip_root}/src/access",
+      "${chip_root}/src/app/dynamic_server:mock-codegen-includes",
+    ]
+
+    public_configs = [ ":config-controller-dynamic-server" ]
+  }
+}
+
+source_set("status-response") {
+  sources = [
+    "StatusResponse.cpp",
+    "StatusResponse.h",
+  ]
+  public_deps = [
+    ":constants",
+    "${chip_root}/src/app/MessageDef",
+    "${chip_root}/src/messaging",
+  ]
+}
+
+source_set("command-handler") {
+  sources = [
+    "CommandHandler.cpp",
+    "CommandHandler.h",
+    "CommandHandlerExchangeInterface.h",
+    "CommandHandlerImpl.cpp",
+    "CommandHandlerImpl.h",
+  ]
+
+  public_deps = [
+    ":paths",
+    ":required-privileges",
+    ":status-response",
+    "${chip_root}/src/access:types",
+    "${chip_root}/src/app/MessageDef",
+    "${chip_root}/src/app/data-model",
+    "${chip_root}/src/app/util:callbacks",
+    "${chip_root}/src/lib/support",
+    "${chip_root}/src/messaging",
   ]
 }
 
@@ -274,15 +361,11 @@ static_library("app") {
   output_name = "libCHIPDataModel"
 
   sources = [
-    "AttributeAccessInterface.cpp",
-    "AttributeAccessInterfaceCache.h",
     "AttributePathExpandIterator.cpp",
     "AttributePathExpandIterator.h",
     "AttributePersistenceProvider.h",
     "ChunkedWriteCallback.cpp",
     "ChunkedWriteCallback.h",
-    "CommandHandler.cpp",
-    "CommandHandlerExchangeInterface.h",
     "CommandResponseHelper.h",
     "CommandResponseSender.cpp",
     "DefaultAttributePersistenceProvider.cpp",
@@ -290,11 +373,12 @@ static_library("app") {
     "DeferredAttributePersistenceProvider.cpp",
     "DeferredAttributePersistenceProvider.h",
     "EventLogging.h",
-    "EventLoggingDelegate.h",
     "EventManagement.cpp",
     "EventManagement.h",
     "FailSafeContext.cpp",
     "FailSafeContext.h",
+    "GenericEventManagementTestEventTriggerHandler.cpp",
+    "GenericEventManagementTestEventTriggerHandler.h",
     "OTAUserConsentCommon.h",
     "ReadHandler.cpp",
     "SafeAttributePersistenceProvider.h",
@@ -306,18 +390,13 @@ static_library("app") {
     #       (app depending on im and im including these headers):
     #       Name with _ so that linter does not recognize it
     # "CommandResponseSender._h"
-    # "CommandHandler._h"
     # "ReadHandler._h",
     # "WriteHandler._h"
-
-    # TODO: the following items cannot be included due to platform includes not being
-    #       able to depend on src/app
-    #       Name with _ so that linter does not recognize it
-    # "_AttributeAccessInterface._h",
   ]
 
   public_deps = [
     ":app_config",
+    ":attribute-access",
     ":constants",
     ":global-attributes",
     ":interaction-model",

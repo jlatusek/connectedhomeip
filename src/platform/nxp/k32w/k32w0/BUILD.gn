@@ -46,7 +46,6 @@ static_library("nxp_platform") {
     "K32W0Config.h",
     "KeyValueStoreManagerImpl.cpp",
     "KeyValueStoreManagerImpl.h",
-    "Logging.cpp",
     "NFCManagerImpl.cpp",
     "NFCManagerImpl.h",
     "PlatformManagerImpl.cpp",
@@ -108,7 +107,10 @@ static_library("nxp_platform") {
 
   deps = [ "${chip_root}/src/platform/logging:headers" ]
 
-  public_deps = [ "${chip_root}/src/platform:platform_base" ]
+  public_deps = [
+    "${chip_root}/src/app:test-event-trigger",
+    "${chip_root}/src/platform:platform_base",
+  ]
 
   if (chip_crypto == "platform") {
     if (chip_crypto_flavor == "tinycrypt") {

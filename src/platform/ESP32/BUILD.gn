@@ -55,7 +55,6 @@ static_library("ESP32") {
     "ESP32Utils.h",
     "KeyValueStoreManagerImpl.cpp",
     "KeyValueStoreManagerImpl.h",
-    "Logging.cpp",
     "LwIPCoreLock.cpp",
     "PlatformManagerImpl.cpp",
     "PlatformManagerImpl.h",
@@ -185,6 +184,8 @@ static_library("ESP32") {
     sources += [
       "ESP32DeviceInfoProvider.cpp",
       "ESP32DeviceInfoProvider.h",
+      "StaticESP32DeviceInfoProvider.cpp",
+      "StaticESP32DeviceInfoProvider.h",
     ]
   }
 
@@ -202,5 +203,16 @@ static_library("ESP32") {
     ]
   }
 
-  cflags = [ "-Wconversion" ]
+  cflags = [
+    "-Wconversion",
+    "-Wundef",
+  ]
+}
+
+source_set("logging") {
+  deps = [
+    "${chip_root}/src/platform:platform_base",
+    "${chip_root}/src/platform/logging:headers",
+  ]
+  sources = [ "Logging.cpp" ]
 }

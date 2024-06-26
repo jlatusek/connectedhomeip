@@ -52,7 +52,6 @@ static_library("nxp_platform") {
     "K32W1Config.h",
     "KeyValueStoreManagerImpl.cpp",
     "KeyValueStoreManagerImpl.h",
-    "Logging.cpp",
     "PlatformManagerImpl.cpp",
     "PlatformManagerImpl.h",
     "SystemTimeSupport.cpp",
@@ -77,7 +76,10 @@ static_library("nxp_platform") {
     "${chip_root}/src/platform/nxp/k32w/k32w1/SMU2Manager.h",
   ]
 
-  public_deps = [ "${chip_root}/src/platform:platform_base" ]
+  public_deps = [
+    "${chip_root}/src/app:test-event-trigger",
+    "${chip_root}/src/platform:platform_base",
+  ]
 
   if (chip_with_low_power != 0) {
     sources += [ "LowPowerHooks.cpp" ]

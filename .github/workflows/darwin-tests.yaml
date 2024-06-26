@@ -16,6 +16,8 @@ name: Darwin Tests
 
 on:
     push:
+        branches-ignore:
+            - 'dependabot/**'
     pull_request:
     merge_group:
     workflow_dispatch:
@@ -50,6 +52,7 @@ jobs:
 
         if: github.actor != 'restyled-io[bot]'
         runs-on: macos-13
+        python-version: '3.11'
 
         steps:
             - name: Checkout
