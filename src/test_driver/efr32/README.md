@@ -1,6 +1,6 @@
 #CHIP EFR32 Test Driver
 
-This builds and runs the NLUnitTest on the efr32 device
+This builds and runs the pw_unit_test on the efr32 device
 
 <hr>
 
@@ -14,7 +14,7 @@ This builds and runs the NLUnitTest on the efr32 device
 
 ## Introduction
 
-This builds a test binary which contains the NLUnitTests and can be flashed onto
+This builds a test binary which contains the pw_unit_test and can be flashed onto
 a device. The device is controlled using the included RPCs, through the python
 test runner.
 
