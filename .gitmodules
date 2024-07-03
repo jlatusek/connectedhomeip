@@ -325,3 +325,6 @@
 	url = https://github.com/Infineon/optiga-trust-m.git
 	branch = matter_support
 	platforms = infineon
+[submodule "third_party/fmt/repo"]
+	path = third_party/fmt/repo
+	url = https://github.com/fmtlib/fmt.git
