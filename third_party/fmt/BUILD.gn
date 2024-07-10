@@ -12,10 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-source_set("libfmt") {
+
+config("fmt_config") {
   include_dirs = [
     "repo/include",
   ]
+  defines = []
+}
+
+source_set("fmt") {
+  include_dirs = [
+    "repo/include",
+  ]
+
+  public_configs = [ ":fmt_config" ]
 
   sources = [
     "repo/src/format.cc",
