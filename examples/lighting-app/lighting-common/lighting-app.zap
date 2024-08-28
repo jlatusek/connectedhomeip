@@ -601,6 +601,7 @@
               "maxInterval": 65344,
               "reportableChange": 0
             },
+{% if not unique_id_disabled %}
             {
               "name": "UniqueID",
               "code": 18,
@@ -617,6 +618,7 @@
               "maxInterval": 65344,
               "reportableChange": 0
             },
+{% endif %}
             {
               "name": "CapabilityMinima",
               "code": 19,

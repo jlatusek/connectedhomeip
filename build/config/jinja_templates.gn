@@ -1,0 +1,22 @@
+template("generate_jinja_template") {
+  forward_variables_from(invoker, "*")
+
+  action("generate_jinja_template") {
+    script = "scripts/jinja_template.py"
+    sources = [ jinja_template ]
+    outputs = [ out ]
+    args = [
+      rebase_path(jinja_template),
+      rebase_path(out),
+    ]
+
+    if (defined(variables)) {
+      args += [ "--variables" ]
+      var_args = []
+      foreach(variable, variables) {
+        var_args += [ variable ]
+      }
+      args += [ string_join(" ", var_args) ]
+    }
+  }
+}

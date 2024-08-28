@@ -56,6 +56,9 @@ _app_root = get_path_info(".", "abspath")
 #
 template("chip_data_model") {
   _data_model_name = target_name
+  if (defined(invoker.deps)) {
+    _deps = invoker.deps
+  }
 
   if (defined(invoker.idl)) {
     _idl = invoker.idl
@@ -82,9 +85,7 @@ template("chip_data_model") {
       outputs += [ "zap-generated/IMClusterCommandHandler.cpp" ]
     }
 
-    if (!defined(deps)) {
-      deps = []
-    }
+    deps = _deps
 
     deps += [ "${chip_root}/src/app" ]
   }
